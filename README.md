@@ -1,36 +1,46 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Family Financial Ledger
 
-## Getting Started
+A private workspace for a financial advisor to record every product a client
+family holds — life insurance, general insurance, mutual funds, and fixed
+income — and to track renewals, due dates, and payment status across all of
+them.
 
-First, run the development server:
+## Requirements
+
+- Node 22+
+- Docker (for the local database)
+
+## Getting started
 
 ```bash
+npm install
+npm run db:start
+cp .env.local.example .env.local   # fill in from `npx supabase status -o env`
+npm run db:reset
+npm run db:types
+npm run db:seed
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Sign in at http://localhost:3000/login with the credentials in `.env.local`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Commands
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| Command | Does |
+|---|---|
+| `npm run dev` | Start the development server |
+| `npm test` | Unit and integration tests |
+| `npm run test:e2e` | Browser tests |
+| `npm run db:reset` | Reapply migrations |
+| `npm run db:types` | Regenerate TypeScript types from the schema |
+| `npm run db:seed-admin` | Create the advisor account |
+| `npm run db:seed-sample` | Insert the sample household (idempotent; requires the advisor account to exist) |
+| `npm run db:seed` | Run `db:seed-admin` then `db:seed-sample` |
 
-## Learn More
+## Layout
 
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- `src/lib/domain/` — pure business logic; no framework imports, heavily tested
+- `src/lib/validation/` — Zod schemas for category-specific holding fields
+- `src/lib/queries/` — composed database reads
+- `supabase/migrations/` — schema source of truth
+- `docs/data-model.md` — why the schema is shaped the way it is
