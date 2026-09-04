@@ -164,11 +164,11 @@ describe('holdingInput', () => {
     expect(parsed.category).toBe('mutual_fund')
   })
 
-  it('rejects mutual fund detail fields on a life insurance row', () => {
+  it('rejects a life insurance detail field on a mutual fund row', () => {
     const result = holdingInput.safeParse({
       ...base,
-      category: 'life_insurance',
-      details: { folio_number: 'F/5678', target_goal: 1000000 },
+      category: 'mutual_fund',
+      details: { target_goal: 1000000, policy_number: 'P/1234' },
     })
     expect(result.success).toBe(false)
   })
@@ -180,6 +180,15 @@ describe('holdingInput', () => {
       details: { asset_type: 'Bank FD', interest_rate: 6.5, payout_frequency: 'Quarterly', remarks: 'Senior citizen rate' },
     })
     expect(parsed.category).toBe('fixed_income')
+  })
+
+  it('rejects a mutual fund detail field on a fixed income row', () => {
+    const result = holdingInput.safeParse({
+      ...base,
+      category: 'fixed_income',
+      details: { asset_type: 'Bank FD', target_goal: 1000000 },
+    })
+    expect(result.success).toBe(false)
   })
 
   it('rejects fixed income detail fields on a general insurance row', () => {
