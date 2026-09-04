@@ -96,8 +96,6 @@ enabled = true
 port = 54323
 # External URL of the API server that frontend connects to.
 api_url = "http://127.0.0.1"
-# OpenAI API Key to use for Supabase AI in the Supabase Studio.
-openai_api_key = "env(OPENAI_API_KEY)"
 
 # Email testing server. Emails sent with the local dev setup are not actually sent - rather, they
 # are monitored, and you can view the emails that would have been sent from the web interface.
@@ -216,8 +214,11 @@ web3 = 30
 # secret = ""
 
 [auth.email]
-# Allow/disallow new user signups via email to your project.
-enable_signup = false
+# This is the email *provider* switch, not just new-account signup: local
+# GoTrue ties this same flag to password login for existing users too, so
+# turning it off locks everyone out, not just self-serve registration. Public
+# signup is blocked separately, by the top-level [auth] enable_signup above.
+enable_signup = true
 # If enabled, a user will be required to confirm any email change on both the old, and new email
 # addresses. If disabled, only the new email is required to confirm.
 double_confirm_changes = true
