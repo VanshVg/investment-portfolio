@@ -65,6 +65,74 @@ describe('families and members', () => {
     expect(error).toBeNull()
   })
 
+  it('stamps whatsapp_consent_at when consent is granted with a mobile number', async () => {
+    const family = await newFamily('Patel — consent stamp')
+    const { data, error } = await client
+      .from('family_members')
+      .insert({
+        family_id: family.id,
+        name: 'Kiranben Patel',
+        relation: 'mother',
+        mobile: '+919876500001',
+        whatsapp_consent: true,
+      })
+      .select()
+      .single()
+    expect(error).toBeNull()
+    expect(data?.whatsapp_consent_at).not.toBeNull()
+  })
+
+  it('clears whatsapp_consent_at when consent is withdrawn', async () => {
+    const family = await newFamily('Patel — consent withdrawn')
+    const { data: created } = await client
+      .from('family_members')
+      .insert({
+        family_id: family.id,
+        name: 'Dineshbhai Patel',
+        relation: 'father',
+        mobile: '+919876500002',
+        whatsapp_consent: true,
+      })
+      .select()
+      .single()
+    expect(created?.whatsapp_consent_at).not.toBeNull()
+
+    const { data: updated, error } = await client
+      .from('family_members')
+      .update({ whatsapp_consent: false })
+      .eq('id', created!.id)
+      .select()
+      .single()
+    expect(error).toBeNull()
+    expect(updated?.whatsapp_consent_at).toBeNull()
+  })
+
+  it('leaves whatsapp_consent_at unchanged on an unrelated update', async () => {
+    const family = await newFamily('Patel — consent unchanged')
+    const { data: created } = await client
+      .from('family_members')
+      .insert({
+        family_id: family.id,
+        name: 'Meeraben Patel',
+        relation: 'daughter',
+        mobile: '+919876500003',
+        whatsapp_consent: true,
+      })
+      .select()
+      .single()
+    const originalConsentAt = created?.whatsapp_consent_at
+    expect(originalConsentAt).not.toBeNull()
+
+    const { data: updated, error } = await client
+      .from('family_members')
+      .update({ name: 'Meeraben Patel Shah' })
+      .eq('id', created!.id)
+      .select()
+      .single()
+    expect(error).toBeNull()
+    expect(updated?.whatsapp_consent_at).toBe(originalConsentAt)
+  })
+
   it('removes members when their family is deleted', async () => {
     const family = await newFamily('Patel — cascade')
     await client

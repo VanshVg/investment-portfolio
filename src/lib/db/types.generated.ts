@@ -125,6 +125,78 @@ export type Database = {
           },
         ]
       }
+      holdings: {
+        Row: {
+          anchor_due_date: string | null
+          category: Database["public"]["Enums"]["holding_category"]
+          created_at: string
+          details: Json
+          due_frequency: Database["public"]["Enums"]["due_frequency"]
+          family_id: string
+          id: string
+          institution: string | null
+          label: string
+          managed_by: Database["public"]["Enums"]["managed_by"]
+          member_id: string | null
+          next_due_date: string | null
+          periodic_amount: number | null
+          principal_amount: number | null
+          reminders_enabled: boolean
+          updated_at: string
+        }
+        Insert: {
+          anchor_due_date?: string | null
+          category: Database["public"]["Enums"]["holding_category"]
+          created_at?: string
+          details?: Json
+          due_frequency?: Database["public"]["Enums"]["due_frequency"]
+          family_id: string
+          id?: string
+          institution?: string | null
+          label: string
+          managed_by?: Database["public"]["Enums"]["managed_by"]
+          member_id?: string | null
+          next_due_date?: string | null
+          periodic_amount?: number | null
+          principal_amount?: number | null
+          reminders_enabled?: boolean
+          updated_at?: string
+        }
+        Update: {
+          anchor_due_date?: string | null
+          category?: Database["public"]["Enums"]["holding_category"]
+          created_at?: string
+          details?: Json
+          due_frequency?: Database["public"]["Enums"]["due_frequency"]
+          family_id?: string
+          id?: string
+          institution?: string | null
+          label?: string
+          managed_by?: Database["public"]["Enums"]["managed_by"]
+          member_id?: string | null
+          next_due_date?: string | null
+          periodic_amount?: number | null
+          principal_amount?: number | null
+          reminders_enabled?: boolean
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "holdings_family_id_fkey"
+            columns: ["family_id"]
+            isOneToOne: false
+            referencedRelation: "families"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "holdings_member_id_fkey"
+            columns: ["member_id"]
+            isOneToOne: false
+            referencedRelation: "family_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           created_at: string
@@ -160,6 +232,18 @@ export type Database = {
       is_admin: { Args: never; Returns: boolean }
     }
     Enums: {
+      due_frequency:
+        | "annual"
+        | "half_yearly"
+        | "quarterly"
+        | "monthly"
+        | "one_time"
+      holding_category:
+        | "life_insurance"
+        | "general_insurance"
+        | "mutual_fund"
+        | "fixed_income"
+      managed_by: "self" | "external"
       member_relation:
         | "self"
         | "spouse"
@@ -299,6 +383,20 @@ export const Constants = {
   },
   public: {
     Enums: {
+      due_frequency: [
+        "annual",
+        "half_yearly",
+        "quarterly",
+        "monthly",
+        "one_time",
+      ],
+      holding_category: [
+        "life_insurance",
+        "general_insurance",
+        "mutual_fund",
+        "fixed_income",
+      ],
+      managed_by: ["self", "external"],
       member_relation: [
         "self",
         "spouse",
