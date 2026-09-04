@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseHoldingDetails } from '@/lib/validation/holdings'
+import { holdingInput, parseHoldingDetails } from '@/lib/validation/holdings'
 
 describe('holding detail validation', () => {
   it('accepts a life insurance policy', () => {
@@ -73,8 +73,6 @@ describe('holding detail validation', () => {
     ).toThrow()
   })
 })
-
-import { holdingInput } from '@/lib/validation/holdings'
 
 describe('holdingInput', () => {
   const base = {
@@ -155,5 +153,41 @@ describe('holdingInput', () => {
     expect(parsed.principalAmount).toBeNull()
     expect(parsed.periodicAmount).toBeNull()
     expect(parsed.nextDueDate).toBeNull()
+  })
+
+  it('accepts a mutual fund row with its own detail fields', () => {
+    const parsed = holdingInput.parse({
+      ...base,
+      category: 'mutual_fund',
+      details: { target_goal: 1000000, folio_number: 'F/5678', fund_house: 'ICICI Prudential' },
+    })
+    expect(parsed.category).toBe('mutual_fund')
+  })
+
+  it('rejects mutual fund detail fields on a life insurance row', () => {
+    const result = holdingInput.safeParse({
+      ...base,
+      category: 'life_insurance',
+      details: { folio_number: 'F/5678', target_goal: 1000000 },
+    })
+    expect(result.success).toBe(false)
+  })
+
+  it('accepts a fixed income row with its own detail fields', () => {
+    const parsed = holdingInput.parse({
+      ...base,
+      category: 'fixed_income',
+      details: { asset_type: 'Bank FD', interest_rate: 6.5, payout_frequency: 'Quarterly', remarks: 'Senior citizen rate' },
+    })
+    expect(parsed.category).toBe('fixed_income')
+  })
+
+  it('rejects fixed income detail fields on a general insurance row', () => {
+    const result = holdingInput.safeParse({
+      ...base,
+      category: 'general_insurance',
+      details: { asset_type: 'FD', sub_category: 'health', insured_asset: 'Self', policy_type: 'Floater' },
+    })
+    expect(result.success).toBe(false)
   })
 })

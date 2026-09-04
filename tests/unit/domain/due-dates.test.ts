@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { nextDueDateAfter, nthDueDate } from '@/lib/domain/due-dates'
+import { applyDueDateEdit, nextDueDateAfter, nthDueDate } from '@/lib/domain/due-dates'
 import { toISODate } from '@/lib/domain/dates'
 
 const iso = (d: Date | null) => (d ? toISODate(d) : null)
@@ -52,8 +52,6 @@ describe('nextDueDateAfter', () => {
     expect(iso(nextDueDateAfter(at('2010-01-31'), 'monthly', at('2026-09-04')))).toBe('2026-09-30')
   })
 })
-
-import { applyDueDateEdit } from '@/lib/domain/due-dates'
 
 describe('applyDueDateEdit', () => {
   const current = { anchorDueDate: '2026-01-15', nextDueDate: '2027-01-15' }

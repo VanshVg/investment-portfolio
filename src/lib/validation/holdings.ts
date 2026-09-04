@@ -60,9 +60,9 @@ export function parseHoldingDetails<C extends HoldingCategory>(
   return holdingDetailSchemas[category].parse(details) as HoldingDetails[C]
 }
 
-// Null must be accepted as INPUT, not merely produced as output: an empty
-// holding draft supplies null for every optional date and amount, so a schema
-// that only permits a null result would reject every newly added record.
+// Null is included explicitly in the input union for uniformity and visibility
+// at the input boundary: an empty holding draft supplies null for principalAmount,
+// periodicAmount, and nextDueDate, so the schemas must accept null as input.
 const optionalIsoDate = z
   .union([z.string(), z.null()])
   .transform((value) => {
