@@ -13,7 +13,8 @@
     "db:start": "supabase start",
     "db:stop": "supabase stop",
     "db:reset": "supabase db reset",
-    "db:types": "supabase gen types typescript --local > src/lib/db/types.generated.ts"
+    "db:types": "supabase gen types typescript --local > src/lib/db/types.generated.ts",
+    "db:seed-admin": "node --experimental-strip-types scripts/seed-admin.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.5",
