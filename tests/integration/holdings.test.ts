@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it } from 'vitest'
-import { ensureUser, signedInClient } from '../helpers/db'
+import { anonClient, ensureUser, signedInClient } from '../helpers/db'
 import type { SupabaseClient } from '@supabase/supabase-js'
 
 const EMAIL = 'holdings-admin@example.test'
@@ -129,5 +129,10 @@ describe('holdings', () => {
       .single()
     expect(data).not.toBeNull()
     expect(data?.member_id).toBeNull()
+  })
+
+  it('denies anonymous reads', async () => {
+    const { data } = await anonClient().from('holdings').select('id')
+    expect(data ?? []).toEqual([])
   })
 })

@@ -34,6 +34,50 @@ export type Database = {
   }
   public: {
     Tables: {
+      due_instances: {
+        Row: {
+          amount_due: number | null
+          created_at: string
+          due_date: string
+          holding_id: string
+          id: string
+          note: string | null
+          paid_on: string | null
+          payment_status: Database["public"]["Enums"]["payment_status"]
+          updated_at: string
+        }
+        Insert: {
+          amount_due?: number | null
+          created_at?: string
+          due_date: string
+          holding_id: string
+          id?: string
+          note?: string | null
+          paid_on?: string | null
+          payment_status?: Database["public"]["Enums"]["payment_status"]
+          updated_at?: string
+        }
+        Update: {
+          amount_due?: number | null
+          created_at?: string
+          due_date?: string
+          holding_id?: string
+          id?: string
+          note?: string | null
+          paid_on?: string | null
+          payment_status?: Database["public"]["Enums"]["payment_status"]
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "due_instances_holding_id_fkey"
+            columns: ["holding_id"]
+            isOneToOne: false
+            referencedRelation: "holdings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       families: {
         Row: {
           assumed_cagr: number
@@ -252,6 +296,7 @@ export type Database = {
         | "father"
         | "mother"
         | "other"
+      payment_status: "paid" | "unpaid" | "unknown"
       user_role: "admin" | "staff" | "client"
     }
     CompositeTypes: {
@@ -406,6 +451,7 @@ export const Constants = {
         "mother",
         "other",
       ],
+      payment_status: ["paid", "unpaid", "unknown"],
       user_role: ["admin", "staff", "client"],
     },
   },
