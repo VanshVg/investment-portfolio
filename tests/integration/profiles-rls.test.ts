@@ -29,4 +29,31 @@ describe('profiles row-level security', () => {
     expect(error).toBeNull()
     expect(data).toBe(true)
   })
+
+  it('allows a user to update their own full_name', async () => {
+    const client = await signedInClient(EMAIL, PASSWORD)
+    const {
+      data: { user },
+    } = await client.auth.getUser()
+    const { error } = await client
+      .from('profiles')
+      .update({ full_name: 'Updated Name' })
+      .eq('id', user!.id)
+    expect(error).toBeNull()
+
+    const { data } = await client.from('profiles').select('full_name').single()
+    expect(data?.full_name).toBe('Updated Name')
+  })
+
+  it('denies a user updating their own role', async () => {
+    const client = await signedInClient(EMAIL, PASSWORD)
+    const {
+      data: { user },
+    } = await client.auth.getUser()
+    const { error } = await client.from('profiles').update({ role: 'client' }).eq('id', user!.id)
+    expect(error).not.toBeNull()
+
+    const { data } = await client.from('profiles').select('role').single()
+    expect(data?.role).toBe('admin')
+  })
 })

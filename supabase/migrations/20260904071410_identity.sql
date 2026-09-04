@@ -59,6 +59,12 @@ create policy profiles_update_own on public.profiles
   using (id = (select auth.uid()))
   with check (id = (select auth.uid()));
 
+-- A user may edit their own profile but not their own role. RLS cannot gate
+-- individual columns, so column privileges do it: this is what stops a future
+-- client login from promoting itself to admin.
+revoke update on public.profiles from authenticated;
+grant update (full_name, mobile) on public.profiles to authenticated;
+
 -- Every auth user gets a profile. Role travels in user metadata at creation.
 create or replace function public.handle_new_user()
 returns trigger
