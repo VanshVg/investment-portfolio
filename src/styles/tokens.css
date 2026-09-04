@@ -1,0 +1,16 @@
+:root {
+  --paper: #f5f3ec;
+  --paper-raised: #ffffff;
+  --navy: #1b2a4a;
+  --navy-deep: #10192c;
+  --ink: #22262e;
+  --ink-soft: #5b5a50;
+  --line: #dad5c6;
+  --line-strong: #c2bba5;
+  --teal: #0f6b5c;
+  --teal-bg: #e4f0ea;
+  --gold: #a9761e;
+  --gold-bg: #f6ecd6;
+  --rust: #a23a2e;
+  --rust-bg: #f4e2dc;
+}
