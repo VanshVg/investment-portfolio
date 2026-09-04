@@ -34,6 +34,97 @@ export type Database = {
   }
   public: {
     Tables: {
+      families: {
+        Row: {
+          assumed_cagr: number
+          created_at: string
+          goal_horizon_years: number
+          head_mobile: string | null
+          head_name: string | null
+          id: string
+          name: string
+          notes: string | null
+          owner_advisor_id: string
+          updated_at: string
+        }
+        Insert: {
+          assumed_cagr?: number
+          created_at?: string
+          goal_horizon_years?: number
+          head_mobile?: string | null
+          head_name?: string | null
+          id?: string
+          name: string
+          notes?: string | null
+          owner_advisor_id: string
+          updated_at?: string
+        }
+        Update: {
+          assumed_cagr?: number
+          created_at?: string
+          goal_horizon_years?: number
+          head_mobile?: string | null
+          head_name?: string | null
+          id?: string
+          name?: string
+          notes?: string | null
+          owner_advisor_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "families_owner_advisor_id_fkey"
+            columns: ["owner_advisor_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      family_members: {
+        Row: {
+          created_at: string
+          family_id: string
+          id: string
+          mobile: string | null
+          name: string
+          relation: Database["public"]["Enums"]["member_relation"]
+          updated_at: string
+          whatsapp_consent: boolean
+          whatsapp_consent_at: string | null
+        }
+        Insert: {
+          created_at?: string
+          family_id: string
+          id?: string
+          mobile?: string | null
+          name: string
+          relation?: Database["public"]["Enums"]["member_relation"]
+          updated_at?: string
+          whatsapp_consent?: boolean
+          whatsapp_consent_at?: string | null
+        }
+        Update: {
+          created_at?: string
+          family_id?: string
+          id?: string
+          mobile?: string | null
+          name?: string
+          relation?: Database["public"]["Enums"]["member_relation"]
+          updated_at?: string
+          whatsapp_consent?: boolean
+          whatsapp_consent_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "family_members_family_id_fkey"
+            columns: ["family_id"]
+            isOneToOne: false
+            referencedRelation: "families"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           created_at: string
@@ -69,6 +160,14 @@ export type Database = {
       is_admin: { Args: never; Returns: boolean }
     }
     Enums: {
+      member_relation:
+        | "self"
+        | "spouse"
+        | "son"
+        | "daughter"
+        | "father"
+        | "mother"
+        | "other"
       user_role: "admin" | "staff" | "client"
     }
     CompositeTypes: {
@@ -200,6 +299,15 @@ export const Constants = {
   },
   public: {
     Enums: {
+      member_relation: [
+        "self",
+        "spouse",
+        "son",
+        "daughter",
+        "father",
+        "mother",
+        "other",
+      ],
       user_role: ["admin", "staff", "client"],
     },
   },
