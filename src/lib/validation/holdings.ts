@@ -59,3 +59,55 @@ export function parseHoldingDetails<C extends HoldingCategory>(
 ): HoldingDetails[C] {
   return holdingDetailSchemas[category].parse(details) as HoldingDetails[C]
 }
+
+// Null must be accepted as INPUT, not merely produced as output: an empty
+// holding draft supplies null for every optional date and amount, so a schema
+// that only permits a null result would reject every newly added record.
+const optionalIsoDate = z
+  .union([z.string(), z.null()])
+  .transform((value) => {
+    if (value === null) return null
+    const trimmed = value.trim()
+    return trimmed === '' ? null : trimmed
+  })
+  .refine((value) => value === null || /^\d{4}-\d{2}-\d{2}$/.test(value), {
+    message: 'Enter a valid date.',
+  })
+
+const optionalAmount = z
+  .union([z.number(), z.string(), z.null()])
+  .transform((value) => {
+    if (value === null) return null
+    if (typeof value === 'number') return value
+    const trimmed = value.trim()
+    return trimmed === '' ? null : Number(trimmed)
+  })
+  .refine((value) => value === null || (Number.isFinite(value) && value >= 0), {
+    message: 'Enter an amount of zero or more.',
+  })
+
+const holdingBase = {
+  memberId: z.string().uuid().nullable(),
+  managedBy: z.enum(['self', 'external']),
+  label: z.string().trim().min(1, 'A name for this record is required.'),
+  institution: z.string().trim().transform((v) => v || null),
+  principalAmount: optionalAmount,
+  periodicAmount: optionalAmount,
+  nextDueDate: optionalIsoDate,
+  dueFrequency: z.enum(['annual', 'half_yearly', 'quarterly', 'monthly', 'one_time']),
+  remindersEnabled: z.boolean(),
+}
+
+/**
+ * The whole row, not just the JSONB. Discriminating on category is what lets a
+ * single actions module serve all four sections while still enforcing each
+ * category's own required detail fields.
+ */
+export const holdingInput = z.discriminatedUnion('category', [
+  z.object({ ...holdingBase, category: z.literal('life_insurance'), details: lifeInsuranceDetails }),
+  z.object({ ...holdingBase, category: z.literal('general_insurance'), details: generalInsuranceDetails }),
+  z.object({ ...holdingBase, category: z.literal('mutual_fund'), details: mutualFundDetails }),
+  z.object({ ...holdingBase, category: z.literal('fixed_income'), details: fixedIncomeDetails }),
+])
+
+export type HoldingInput = z.infer<typeof holdingInput>

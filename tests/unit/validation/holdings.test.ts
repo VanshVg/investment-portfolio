@@ -73,3 +73,87 @@ describe('holding detail validation', () => {
     ).toThrow()
   })
 })
+
+import { holdingInput } from '@/lib/validation/holdings'
+
+describe('holdingInput', () => {
+  const base = {
+    memberId: null,
+    managedBy: 'self' as const,
+    label: 'HDFC Click2Protect',
+    institution: 'HDFC Life',
+    principalAmount: 5000000,
+    periodicAmount: 12500,
+    nextDueDate: '2027-03-12',
+    dueFrequency: 'annual' as const,
+    remindersEnabled: true,
+  }
+
+  it('accepts a life insurance row with its own detail fields', () => {
+    const parsed = holdingInput.parse({
+      ...base,
+      category: 'life_insurance',
+      details: { policy_number: 'P/1234', term_years: 20 },
+    })
+    expect(parsed.category).toBe('life_insurance')
+  })
+
+  it('rejects detail fields belonging to another category', () => {
+    const result = holdingInput.safeParse({
+      ...base,
+      category: 'life_insurance',
+      details: { folio_number: 'F/999' },
+    })
+    expect(result.success).toBe(false)
+  })
+
+  it('requires general insurance to declare its sub-category and asset', () => {
+    const result = holdingInput.safeParse({
+      ...base,
+      category: 'general_insurance',
+      details: {},
+    })
+    expect(result.success).toBe(false)
+  })
+
+  it('accepts a complete general insurance row', () => {
+    const parsed = holdingInput.parse({
+      ...base,
+      category: 'general_insurance',
+      details: { sub_category: 'health', insured_asset: 'Family floater', policy_type: 'Floater' },
+    })
+    expect(parsed.category).toBe('general_insurance')
+  })
+
+  it('requires a label', () => {
+    expect(
+      holdingInput.safeParse({ ...base, label: '  ', category: 'life_insurance', details: {} }).success,
+    ).toBe(false)
+  })
+
+  it('treats a blank due date as absent', () => {
+    const parsed = holdingInput.parse({
+      ...base,
+      nextDueDate: '',
+      category: 'life_insurance',
+      details: {},
+    })
+    expect(parsed.nextDueDate).toBeNull()
+  })
+
+  it('accepts the nulls an empty draft actually supplies', () => {
+    // emptyHoldingDraft() sets these to null, so null must be a valid INPUT and
+    // not merely a permitted output. This is the exact shape a new row submits.
+    const parsed = holdingInput.parse({
+      ...base,
+      principalAmount: null,
+      periodicAmount: null,
+      nextDueDate: null,
+      category: 'life_insurance',
+      details: {},
+    })
+    expect(parsed.principalAmount).toBeNull()
+    expect(parsed.periodicAmount).toBeNull()
+    expect(parsed.nextDueDate).toBeNull()
+  })
+})
