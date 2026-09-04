@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it } from 'vitest'
-import { anonClient, ensureUser, signedInClient } from '../helpers/db'
+import { adminClient, anonClient, ensureUser, signedInClient } from '../helpers/db'
 import type { SupabaseClient } from '@supabase/supabase-js'
 
 const EMAIL = 'holdings-admin@example.test'
@@ -134,5 +134,30 @@ describe('holdings', () => {
   it('denies anonymous reads', async () => {
     const { data } = await anonClient().from('holdings').select('id')
     expect(data ?? []).toEqual([])
+  })
+
+  it('denies anonymous inserts', async () => {
+    const { error } = await anonClient().from('holdings').insert({
+      family_id: familyId,
+      category: 'mutual_fund',
+      label: 'Anonymous Insert Attempt',
+    })
+    expect(error).not.toBeNull()
+  })
+
+  it('denies anonymous deletes', async () => {
+    const { data: holding, error: createError } = await client
+      .from('holdings')
+      .insert({ family_id: familyId, category: 'mutual_fund', label: 'Anon delete target' })
+      .select()
+      .single()
+    if (createError) throw new Error(createError.message)
+
+    const { error } = await anonClient().from('holdings').delete().eq('id', holding!.id)
+    expect(error).toBeNull() // a delete matching no visible rows is not itself an error
+
+    const admin = adminClient()
+    const { data } = await admin.from('holdings').select('id').eq('id', holding!.id)
+    expect(data).toHaveLength(1)
   })
 })

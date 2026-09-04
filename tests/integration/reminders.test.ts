@@ -1,17 +1,43 @@
 import { beforeAll, describe, expect, it } from 'vitest'
-import { anonClient, ensureUser, signedInClient } from '../helpers/db'
+import { adminClient, anonClient, ensureUser, signedInClient } from '../helpers/db'
 import type { SupabaseClient } from '@supabase/supabase-js'
 
 const EMAIL = 'reminders-admin@example.test'
 const PASSWORD = 'test-password-123'
 
 let client: SupabaseClient
+let advisorId: string
 let holdingId: string
 let dueInstanceId: string
+
+/** A fresh, unreferenced holding — its own family too — for write-denial tests. */
+async function newFixtureHolding(label: string) {
+  const { data: family, error: familyError } = await client
+    .from('families')
+    .insert({ name: `Reminder fixture — ${label}`, owner_advisor_id: advisorId })
+    .select()
+    .single()
+  if (familyError) throw new Error(familyError.message)
+
+  const { data: holding, error: holdingError } = await client
+    .from('holdings')
+    .insert({
+      family_id: family!.id,
+      category: 'life_insurance',
+      label,
+      periodic_amount: 45_000,
+    })
+    .select()
+    .single()
+  if (holdingError) throw new Error(holdingError.message)
+
+  return holding!
+}
 
 describe('reminder rules and log', () => {
   beforeAll(async () => {
     const user = await ensureUser(EMAIL, PASSWORD, 'admin')
+    advisorId = user!.id
     client = await signedInClient(EMAIL, PASSWORD)
 
     const { data: family } = await client
@@ -129,5 +155,74 @@ describe('reminder rules and log', () => {
   it('denies anonymous reads of the reminder log', async () => {
     const { data } = await anonClient().from('reminder_log').select('id')
     expect(data ?? []).toEqual([])
+  })
+
+  it('denies anonymous inserts into reminder_rules', async () => {
+    const holding = await newFixtureHolding('Anon rule-insert fixture')
+
+    const { error } = await anonClient()
+      .from('reminder_rules')
+      .insert({ holding_id: holding.id, days_before: [10] })
+    expect(error).not.toBeNull()
+  })
+
+  it('denies anonymous deletes of reminder_rules', async () => {
+    const holding = await newFixtureHolding('Anon rule-delete fixture')
+    const { data: rule, error: ruleError } = await client
+      .from('reminder_rules')
+      .insert({ holding_id: holding.id, days_before: [10] })
+      .select()
+      .single()
+    if (ruleError) throw new Error(ruleError.message)
+
+    const { error } = await anonClient().from('reminder_rules').delete().eq('id', rule!.id)
+    expect(error).toBeNull() // a delete matching no visible rows is not itself an error
+
+    const admin = adminClient()
+    const { data } = await admin.from('reminder_rules').select('id').eq('id', rule!.id)
+    expect(data).toHaveLength(1)
+  })
+
+  it('denies anonymous inserts into reminder_log', async () => {
+    const { error } = await anonClient().from('reminder_log').insert({
+      due_instance_id: dueInstanceId,
+      days_before: 60,
+      recipient_type: 'advisor',
+      recipient_mobile: '+919000000099',
+      channel: 'whatsapp',
+      status: 'sent',
+    })
+    expect(error).not.toBeNull()
+  })
+
+  it('denies anonymous deletes of reminder_log', async () => {
+    const holding = await newFixtureHolding('Anon log-delete fixture')
+    const { data: instance, error: instanceError } = await client
+      .from('due_instances')
+      .insert({ holding_id: holding.id, due_date: '2027-05-01', amount_due: 45_000 })
+      .select()
+      .single()
+    if (instanceError) throw new Error(instanceError.message)
+
+    const { data: log, error: logError } = await client
+      .from('reminder_log')
+      .insert({
+        due_instance_id: instance!.id,
+        days_before: 30,
+        recipient_type: 'advisor',
+        recipient_mobile: '+919000000098',
+        channel: 'whatsapp',
+        status: 'sent',
+      })
+      .select()
+      .single()
+    if (logError) throw new Error(logError.message)
+
+    const { error } = await anonClient().from('reminder_log').delete().eq('id', log!.id)
+    expect(error).toBeNull() // a delete matching no visible rows is not itself an error
+
+    const admin = adminClient()
+    const { data } = await admin.from('reminder_log').select('id').eq('id', log!.id)
+    expect(data).toHaveLength(1)
   })
 })

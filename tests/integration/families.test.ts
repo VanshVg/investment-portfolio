@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it } from 'vitest'
-import { anonClient, ensureUser, signedInClient } from '../helpers/db'
+import { adminClient, anonClient, ensureUser, signedInClient } from '../helpers/db'
 import type { SupabaseClient } from '@supabase/supabase-js'
 
 const EMAIL = 'families-admin@example.test'
@@ -148,5 +148,49 @@ describe('families and members', () => {
   it('denies anonymous reads', async () => {
     const { data } = await anonClient().from('families').select('id')
     expect(data ?? []).toEqual([])
+  })
+
+  it('denies anonymous inserts into families', async () => {
+    const { error } = await anonClient()
+      .from('families')
+      .insert({ name: 'Anonymous Insert Attempt', owner_advisor_id: advisorId })
+    expect(error).not.toBeNull()
+  })
+
+  it('denies anonymous deletes of families', async () => {
+    const family = await newFamily('Patel — anon delete target')
+
+    const { error } = await anonClient().from('families').delete().eq('id', family.id)
+    expect(error).toBeNull() // a delete matching no visible rows is not itself an error
+
+    const admin = adminClient()
+    const { data } = await admin.from('families').select('id').eq('id', family.id)
+    expect(data).toHaveLength(1)
+  })
+
+  it('denies anonymous inserts into family_members', async () => {
+    const family = await newFamily('Patel — anon member insert target')
+
+    const { error } = await anonClient()
+      .from('family_members')
+      .insert({ family_id: family.id, name: 'Anonymous Insert Attempt', relation: 'other' })
+    expect(error).not.toBeNull()
+  })
+
+  it('denies anonymous deletes of family_members', async () => {
+    const family = await newFamily('Patel — anon member delete target')
+    const { data: member, error: memberError } = await client
+      .from('family_members')
+      .insert({ family_id: family.id, name: 'Delete Target', relation: 'other' })
+      .select()
+      .single()
+    if (memberError) throw new Error(memberError.message)
+
+    const { error } = await anonClient().from('family_members').delete().eq('id', member!.id)
+    expect(error).toBeNull() // a delete matching no visible rows is not itself an error
+
+    const admin = adminClient()
+    const { data } = await admin.from('family_members').select('id').eq('id', member!.id)
+    expect(data).toHaveLength(1)
   })
 })

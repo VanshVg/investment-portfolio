@@ -101,4 +101,55 @@ describe('profiles row-level security', () => {
     const { data: after } = await admin.auth.admin.listUsers()
     expect(after?.users.some((u) => u.email === email)).toBe(false)
   })
+
+  it('denies anonymous inserts', async () => {
+    // A throwaway auth user so the row we try to insert is otherwise fully
+    // valid (real FK target, free primary key) — the only thing standing in
+    // the way is RLS. Using an ordinary made-up id would also be rejected by
+    // the FK to auth.users, which would prove nothing about RLS.
+    const admin = adminClient()
+    const email = 'rls-anon-insert@example.test'
+    const { data: before } = await admin.auth.admin.listUsers()
+    const stale = before?.users.find((u) => u.email === email)
+    if (stale) await admin.auth.admin.deleteUser(stale.id)
+
+    const { data: created, error: createError } = await admin.auth.admin.createUser({
+      email,
+      password: PASSWORD,
+      email_confirm: true,
+    })
+    if (createError) throw new Error(`could not create throwaway user: ${createError.message}`)
+    const userId = created.user!.id
+
+    try {
+      // The signup trigger already created a profile for this user; delete it
+      // so the id is free again and the anon insert would otherwise succeed.
+      const { error: cleanupError } = await admin.from('profiles').delete().eq('id', userId)
+      if (cleanupError) throw new Error(`could not free profile row: ${cleanupError.message}`)
+
+      const { error } = await anonClient()
+        .from('profiles')
+        .insert({ id: userId, full_name: 'Anonymous Insert Attempt' })
+      expect(error).not.toBeNull()
+
+      const { data: rows } = await admin.from('profiles').select('id').eq('id', userId)
+      expect(rows ?? []).toEqual([])
+    } finally {
+      await admin.auth.admin.deleteUser(userId)
+    }
+  })
+
+  it('denies anonymous deletes', async () => {
+    const client = await signedInClient(EMAIL, PASSWORD)
+    const {
+      data: { user },
+    } = await client.auth.getUser()
+
+    const { error } = await anonClient().from('profiles').delete().eq('id', user!.id)
+    expect(error).toBeNull() // a delete matching no visible rows is not itself an error
+
+    const admin = adminClient()
+    const { data } = await admin.from('profiles').select('id').eq('id', user!.id)
+    expect(data).toHaveLength(1)
+  })
 })
