@@ -268,6 +268,97 @@ export type Database = {
         }
         Relationships: []
       }
+      reminder_log: {
+        Row: {
+          channel: Database["public"]["Enums"]["reminder_channel"]
+          created_at: string
+          days_before: number
+          due_instance_id: string
+          error: string | null
+          id: string
+          provider_message_id: string | null
+          recipient_mobile: string
+          recipient_type: Database["public"]["Enums"]["reminder_recipient_type"]
+          sent_at: string | null
+          status: Database["public"]["Enums"]["reminder_status"]
+        }
+        Insert: {
+          channel?: Database["public"]["Enums"]["reminder_channel"]
+          created_at?: string
+          days_before: number
+          due_instance_id: string
+          error?: string | null
+          id?: string
+          provider_message_id?: string | null
+          recipient_mobile: string
+          recipient_type: Database["public"]["Enums"]["reminder_recipient_type"]
+          sent_at?: string | null
+          status?: Database["public"]["Enums"]["reminder_status"]
+        }
+        Update: {
+          channel?: Database["public"]["Enums"]["reminder_channel"]
+          created_at?: string
+          days_before?: number
+          due_instance_id?: string
+          error?: string | null
+          id?: string
+          provider_message_id?: string | null
+          recipient_mobile?: string
+          recipient_type?: Database["public"]["Enums"]["reminder_recipient_type"]
+          sent_at?: string | null
+          status?: Database["public"]["Enums"]["reminder_status"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reminder_log_due_instance_id_fkey"
+            columns: ["due_instance_id"]
+            isOneToOne: false
+            referencedRelation: "due_instances"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      reminder_rules: {
+        Row: {
+          category: Database["public"]["Enums"]["holding_category"] | null
+          channel: Database["public"]["Enums"]["reminder_channel"]
+          created_at: string
+          days_before: number[]
+          holding_id: string | null
+          id: string
+          is_active: boolean
+          updated_at: string
+        }
+        Insert: {
+          category?: Database["public"]["Enums"]["holding_category"] | null
+          channel?: Database["public"]["Enums"]["reminder_channel"]
+          created_at?: string
+          days_before: number[]
+          holding_id?: string | null
+          id?: string
+          is_active?: boolean
+          updated_at?: string
+        }
+        Update: {
+          category?: Database["public"]["Enums"]["holding_category"] | null
+          channel?: Database["public"]["Enums"]["reminder_channel"]
+          created_at?: string
+          days_before?: number[]
+          holding_id?: string | null
+          id?: string
+          is_active?: boolean
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reminder_rules_holding_id_fkey"
+            columns: ["holding_id"]
+            isOneToOne: false
+            referencedRelation: "holdings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
@@ -297,6 +388,9 @@ export type Database = {
         | "mother"
         | "other"
       payment_status: "paid" | "unpaid" | "unknown"
+      reminder_channel: "whatsapp"
+      reminder_recipient_type: "advisor" | "client"
+      reminder_status: "pending" | "sent" | "failed" | "skipped"
       user_role: "admin" | "staff" | "client"
     }
     CompositeTypes: {
@@ -452,6 +546,9 @@ export const Constants = {
         "other",
       ],
       payment_status: ["paid", "unpaid", "unknown"],
+      reminder_channel: ["whatsapp"],
+      reminder_recipient_type: ["advisor", "client"],
+      reminder_status: ["pending", "sent", "failed", "skipped"],
       user_role: ["admin", "staff", "client"],
     },
   },
