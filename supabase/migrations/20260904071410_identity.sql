@@ -66,18 +66,40 @@ revoke update on public.profiles from authenticated;
 grant update (full_name, mobile) on public.profiles to authenticated;
 
 -- Every auth user gets a profile. Role travels in user metadata at creation.
+-- An absent role defaults to 'admin' (today's only caller, the seed script,
+-- relies on this). A present-but-unrecognized role is a programming error at
+-- the call site, not something to silently coerce, so it fails loudly with
+-- a message naming the bad value and the valid set — read from pg_enum so
+-- adding a fourth role later never requires touching this function.
 create or replace function public.handle_new_user()
 returns trigger
 language plpgsql
 security definer
 set search_path = public
 as $$
+declare
+  requested_role text := new.raw_user_meta_data ->> 'role';
+  resolved_role public.user_role;
 begin
+  if requested_role is null then
+    resolved_role := 'admin';
+  else
+    begin
+      resolved_role := requested_role::public.user_role;
+    exception when invalid_text_representation then
+      raise exception 'invalid role %: must be one of %',
+        quote_literal(requested_role),
+        (select string_agg(enumlabel, ', ' order by enumsortorder)
+         from pg_enum
+         where enumtypid = 'public.user_role'::regtype);
+    end;
+  end if;
+
   insert into public.profiles (id, full_name, role)
   values (
     new.id,
     coalesce(new.raw_user_meta_data ->> 'full_name', new.email),
-    coalesce((new.raw_user_meta_data ->> 'role')::public.user_role, 'admin')
+    resolved_role
   );
   return new;
 end;
