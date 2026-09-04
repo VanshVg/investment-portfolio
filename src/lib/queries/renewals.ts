@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import type { Database } from '@/lib/db/types.generated'
 
 export interface RenewalFilters {
   /** Inclusive ISO yyyy-mm-dd bounds. */
@@ -31,7 +32,7 @@ export interface RenewalRow {
  * reason holdings is a single table.
  */
 export async function listRenewals(
-  client: SupabaseClient,
+  client: SupabaseClient<Database>,
   filters: RenewalFilters,
 ): Promise<RenewalRow[]> {
   let query = client
