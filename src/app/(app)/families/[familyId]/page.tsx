@@ -7,6 +7,8 @@ import { FamilyHeader } from './_components/FamilyHeader'
 import { MembersSection } from './_components/MembersSection'
 import { LifeInsuranceSection } from './_components/LifeInsuranceSection'
 import { GeneralInsuranceSection } from './_components/GeneralInsuranceSection'
+import { MutualFundSection } from './_components/MutualFundSection'
+import { FixedIncomeSection } from './_components/FixedIncomeSection'
 import { createMember, deleteMember, updateMember } from './member-actions'
 import { createHolding, deleteHolding, updateHolding } from './holding-actions'
 
@@ -78,7 +80,24 @@ export default async function FamilyWorkspacePage({
         deleteHolding={deleteHolding}
       />
 
-      {/* Remaining holding sections are mounted by Task 11. Counts keep the shell honest until then. */}
+      <MutualFundSection
+        familyId={familyId}
+        members={members}
+        holdings={byCategory.mutual_fund}
+        createHolding={createHolding}
+        updateHolding={updateHolding}
+        deleteHolding={deleteHolding}
+      />
+
+      <FixedIncomeSection
+        familyId={familyId}
+        members={members}
+        holdings={byCategory.fixed_income}
+        createHolding={createHolding}
+        updateHolding={updateHolding}
+        deleteHolding={deleteHolding}
+      />
+
       <p className="mt-6 text-[12.5px] text-ink-soft">
         {holdings.length} financial record(s)
         {' · '}
