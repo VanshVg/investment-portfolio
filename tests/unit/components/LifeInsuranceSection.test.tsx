@@ -87,4 +87,20 @@ describe('LifeInsuranceSection', () => {
     expect(screen.getByLabelText('Plan name')).toHaveValue('Max Life Smart')
     expect(screen.getByLabelText('Term (years)')).toHaveValue(-5)
   })
+  it('carries the reminder toggle through to the saved holding', async () => {
+    // Insurance renewals are exactly what an advisor wants chasing, so the
+    // toggle defaults on here — but it has to actually reach the payload.
+    const { createHolding } = renderSection()
+
+    fireEvent.click(screen.getByRole('button', { name: '+ Add policy' }))
+    expect(screen.getByLabelText('Send reminders')).toBeChecked()
+
+    fireEvent.change(screen.getByLabelText('Plan name'), { target: { value: 'Max Life Smart' } })
+    fireEvent.click(screen.getByLabelText('Send reminders'))
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => expect(createHolding).toHaveBeenCalled())
+    const input = (createHolding.mock.calls[0] as unknown[])[1] as Record<string, unknown>
+    expect(input.remindersEnabled).toBe(false)
+  })
 })

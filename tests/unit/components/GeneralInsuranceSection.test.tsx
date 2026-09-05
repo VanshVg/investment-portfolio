@@ -116,4 +116,32 @@ describe('GeneralInsuranceSection', () => {
     expect(screen.getByLabelText('Policy name')).toHaveValue('HDFC Ergo')
     expect(screen.getByLabelText('Insured asset')).toHaveValue('Honda City')
   })
+  it('carries the reminder toggle through to the saved holding', async () => {
+    // Insurance renewals are exactly what an advisor wants chasing, so the
+    // toggle defaults on here — but it has to actually reach the payload.
+    const createHolding = vi.fn(ok)
+    render(
+      <GeneralInsuranceSection
+        familyId="f1"
+        members={[]}
+        holdings={holdings}
+        createHolding={createHolding}
+        updateHolding={ok}
+        deleteHolding={ok}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: '+ Add policy' }))
+    expect(screen.getByLabelText('Send reminders')).toBeChecked()
+
+    fireEvent.change(screen.getByLabelText('Policy name'), { target: { value: 'HDFC Ergo' } })
+    fireEvent.change(screen.getByLabelText('Insured asset'), { target: { value: 'Swift' } })
+    fireEvent.change(screen.getByLabelText('Policy type'), { target: { value: 'Comprehensive' } })
+    fireEvent.click(screen.getByLabelText('Send reminders'))
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => expect(createHolding).toHaveBeenCalled())
+    const input = (createHolding.mock.calls[0] as unknown[])[1] as Record<string, unknown>
+    expect(input.remindersEnabled).toBe(false)
+  })
 })
