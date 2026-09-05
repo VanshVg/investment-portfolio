@@ -5,7 +5,9 @@ import { getFamily, listHoldings, listMembers } from '@/lib/queries/families'
 import { updateFamily } from '../actions'
 import { FamilyHeader } from './_components/FamilyHeader'
 import { MembersSection } from './_components/MembersSection'
+import { LifeInsuranceSection } from './_components/LifeInsuranceSection'
 import { createMember, deleteMember, updateMember } from './member-actions'
+import { createHolding, deleteHolding, updateHolding } from './holding-actions'
 
 export default async function FamilyWorkspacePage({
   params,
@@ -57,7 +59,16 @@ export default async function FamilyWorkspacePage({
         deleteMember={deleteMember}
       />
 
-      {/* Holding sections are mounted by Tasks 9-11. Counts keep the shell honest until then. */}
+      <LifeInsuranceSection
+        familyId={familyId}
+        members={members}
+        holdings={byCategory.life_insurance}
+        createHolding={createHolding}
+        updateHolding={updateHolding}
+        deleteHolding={deleteHolding}
+      />
+
+      {/* Remaining holding sections are mounted by Tasks 10-11. Counts keep the shell honest until then. */}
       <p className="mt-6 text-[12.5px] text-ink-soft">
         {holdings.length} financial record(s)
         {' · '}
