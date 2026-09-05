@@ -376,4 +376,129 @@ describe('createHolding / updateHolding / deleteHolding server actions', () => {
       .eq('label', 'Invalid details probe')
     expect(after.data ?? []).toEqual(before.data ?? [])
   })
+
+  it('rejects an update whose category disagrees with the stored row, and writes nothing', async () => {
+    const admin = adminClient()
+    const { data: holding } = await admin
+      .from('holdings')
+      .insert({
+        family_id: familyId,
+        category: 'life_insurance',
+        label: 'Category mismatch probe',
+        details: { policy_number: 'ORIG-1' },
+      })
+      .select()
+      .single()
+
+    const result = await updateHolding(holding!.id, familyId, {
+      memberId: null,
+      managedBy: 'self',
+      label: 'Category mismatch probe',
+      institution: '',
+      principalAmount: null,
+      periodicAmount: null,
+      nextDueDate: null,
+      dueFrequency: 'annual',
+      remindersEnabled: true,
+      category: 'mutual_fund',
+      details: { target_goal: 999_999 },
+    })
+
+    expect(result.ok).toBe(false)
+    if (result.ok) throw new Error('expected failure result')
+    expect(result.fieldErrors ?? result.formError).toBeTruthy()
+
+    const { data: row } = await admin
+      .from('holdings')
+      .select('category, details')
+      .eq('id', holding!.id)
+      .single()
+    expect(row?.category).toBe('life_insurance')
+    expect(row?.details).toEqual({ policy_number: 'ORIG-1' })
+
+    await admin.from('holdings').delete().eq('id', holding!.id)
+  })
+
+  it('rejects a mismatched update for a second category pairing, and writes nothing', async () => {
+    const admin = adminClient()
+    const { data: holding } = await admin
+      .from('holdings')
+      .insert({
+        family_id: familyId,
+        category: 'fixed_income',
+        label: 'Category mismatch probe 2',
+        details: { asset_type: 'Bank FD' },
+      })
+      .select()
+      .single()
+
+    const result = await updateHolding(holding!.id, familyId, {
+      memberId: null,
+      managedBy: 'self',
+      label: 'Category mismatch probe 2',
+      institution: '',
+      principalAmount: null,
+      periodicAmount: null,
+      nextDueDate: null,
+      dueFrequency: 'annual',
+      remindersEnabled: true,
+      category: 'general_insurance',
+      details: { sub_category: 'health', insured_asset: 'Self', policy_type: 'Mediclaim' },
+    })
+
+    expect(result.ok).toBe(false)
+    if (result.ok) throw new Error('expected failure result')
+    expect(result.fieldErrors ?? result.formError).toBeTruthy()
+
+    const { data: row } = await admin
+      .from('holdings')
+      .select('category, details')
+      .eq('id', holding!.id)
+      .single()
+    expect(row?.category).toBe('fixed_income')
+    expect(row?.details).toEqual({ asset_type: 'Bank FD' })
+
+    await admin.from('holdings').delete().eq('id', holding!.id)
+  })
+
+  it('still updates a holding when the submitted category matches the stored row', async () => {
+    const admin = adminClient()
+    const { data: holding } = await admin
+      .from('holdings')
+      .insert({
+        family_id: familyId,
+        category: 'mutual_fund',
+        label: 'Same-category update probe',
+        details: { target_goal: 100_000 },
+      })
+      .select()
+      .single()
+
+    const result = await updateHolding(holding!.id, familyId, {
+      memberId: null,
+      managedBy: 'self',
+      label: 'Same-category update probe',
+      institution: '',
+      principalAmount: null,
+      periodicAmount: null,
+      nextDueDate: null,
+      dueFrequency: 'monthly',
+      remindersEnabled: true,
+      category: 'mutual_fund',
+      details: { target_goal: 500_000, fund_house: 'Parag Parikh' },
+    })
+
+    expect(result.ok).toBe(true)
+
+    const { data: row } = await admin
+      .from('holdings')
+      .select('category, details, due_frequency')
+      .eq('id', holding!.id)
+      .single()
+    expect(row?.category).toBe('mutual_fund')
+    expect(row?.details).toEqual({ target_goal: 500_000, fund_house: 'Parag Parikh' })
+    expect(row?.due_frequency).toBe('monthly')
+
+    await admin.from('holdings').delete().eq('id', holding!.id)
+  })
 })

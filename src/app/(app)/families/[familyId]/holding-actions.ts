@@ -50,13 +50,23 @@ export async function updateHolding(
 
   const supabase = await createServerSupabase()
 
-  // The current schedule is needed to decide whether this is a real date edit.
+  // The current schedule is needed to decide whether this is a real date edit,
+  // and the current category is needed below to guard against `details` meant
+  // for a different category ending up on this row (category itself is never
+  // written by this action, so the column can never actually change).
   const { data: current, error: readError } = await supabase
     .from('holdings')
-    .select('anchor_due_date, next_due_date')
+    .select('anchor_due_date, next_due_date, category')
     .eq('id', id)
     .single()
   if (readError) return fromPostgrestError(readError)
+
+  if (current!.category !== value.category) {
+    return {
+      ok: false,
+      formError: 'The category on this record cannot be changed here. Refresh the page and try again.',
+    }
+  }
 
   const schedule = applyDueDateEdit(
     { anchorDueDate: current!.anchor_due_date, nextDueDate: current!.next_due_date },
