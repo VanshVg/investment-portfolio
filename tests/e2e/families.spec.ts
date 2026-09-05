@@ -24,14 +24,9 @@ test('records a household, its member and a policy, then erases it', async ({ pa
   await page.getByLabel('Mobile').fill('9876543210')
   await page.getByRole('button', { name: 'Save' }).click()
 
-  // The local DB carries ~1300 stale fixture households and this list has no
-  // pagination, so every save re-renders the full table: a longer timeout
-  // than the default gives that render room to finish under this data volume
-  // without changing what is asserted.
-  await expect(page.getByRole('link', { name: FAMILY })).toBeVisible({ timeout: 15_000 })
-  // The local DB carries ~1300 stale fixture households, some sharing this
-  // same placeholder mobile number, so the check is scoped to this family's
-  // own row rather than matched page-wide.
+  await expect(page.getByRole('link', { name: FAMILY })).toBeVisible()
+  // Other households can carry this same placeholder number, so the check is
+  // scoped to this family's own row rather than matched page-wide.
   const familyRow = page.getByRole('row').filter({ has: page.getByRole('link', { name: FAMILY }) })
   // The number was normalised to E.164 on the way in.
   await expect(familyRow.getByText('+919876543210')).toBeVisible()
@@ -81,10 +76,10 @@ test('records a household, its member and a policy, then erases it', async ({ pa
   // Erase the household. This is the DPDP erasure path, so it demands the name.
   await page.goto('/families')
   await page.getByRole('button', { name: `Delete ${FAMILY}` }).click()
-  // The local DB carries ~1300 stale fixture households, each with its own
-  // "Delete <name>" button on this page. A bare "Delete" name match is a
-  // substring match against every one of them, so the confirm button is
-  // scoped to the one open dialog rather than looked up page-wide.
+  // Every row on this page has its own "Delete <name>" button, and Playwright
+  // matches accessible names by substring, so a bare "Delete" matches all of
+  // them plus the dialog's own button. Scoping to the one open dialog is the
+  // fix; the labels are correct for screen-reader users and stay as they are.
   const dialog = page.getByRole('dialog')
   await expect(dialog).toBeVisible()
   await dialog.getByLabel(/Type .* to confirm/).fill(FAMILY)
@@ -100,14 +95,12 @@ test('refuses to arm the family delete until the name is typed exactly', async (
   await page.getByRole('button', { name: '+ Add family' }).click()
   await page.getByLabel('Family name').fill(name)
   await page.getByRole('button', { name: 'Save' }).click()
-  // See the journey test above: the unpaginated list re-renders ~1300 rows on
-  // every save, so this needs more than the default timeout.
-  await expect(page.getByRole('link', { name })).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByRole('link', { name })).toBeVisible()
 
   await page.getByRole('button', { name: `Delete ${name}` }).click()
   // Scoped to the one open dialog, for the same reason as the journey test
-  // above: a bare "Delete" name is a substring match against every stale
-  // fixture row's own "Delete <name>" button on this page.
+  // above: a bare "Delete" is a substring match against every row's own
+  // "Delete <name>" button.
   const dialog = page.getByRole('dialog')
   const confirm = dialog.getByRole('button', { name: 'Delete' })
   await expect(confirm).toBeDisabled()
@@ -131,9 +124,7 @@ test('adds a policy without touching the mouse', async ({ page }) => {
   await page.getByLabel('Family name').fill(name)
   // Enter commits the row: fast entry is a stated requirement, so it is tested.
   await page.getByLabel('Family name').press('Enter')
-  // See the journey test above: the unpaginated list re-renders ~1300 rows on
-  // every save, so this needs more than the default timeout.
-  await expect(page.getByRole('link', { name })).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByRole('link', { name })).toBeVisible()
 
   // Clean up. Scoped to the dialog for the same reason as the tests above.
   await page.getByRole('button', { name: `Delete ${name}` }).click()
