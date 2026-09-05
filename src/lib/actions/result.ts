@@ -31,18 +31,28 @@ const CODE_MESSAGES: Record<string, string> = {
 }
 
 export function fromZodError(error: z.ZodError): ActionResult {
-  // z.flattenError's declared type depends on the schema's inferred output type,
-  // which is unknown here since callers pass errors from many different schemas.
-  // At runtime it always returns this shape regardless of T (verified against 4.5.4).
-  const flat = z.flattenError(error) as { formErrors: string[]; fieldErrors: Record<string, string[]> }
-
+  // Keyed by the full dotted path (e.g. `details.term_years`), not just the
+  // top-level segment, so a validation failure inside a nested object (the
+  // `details` JSONB) attributes to the field that actually caused it instead
+  // of collapsing every nested issue onto one `details` bucket.
   const fieldErrors: Record<string, string> = {}
-  for (const [field, messages] of Object.entries(flat.fieldErrors)) {
-    if (messages && messages.length > 0) fieldErrors[field] = messages[0] as string
+  let formError: string | undefined
+
+  for (const issue of error.issues) {
+    const path = issue.path.join('.')
+    // A path-less issue (whole-object refinement) or one that targets the
+    // `details` object itself has nowhere to render as a field error — no
+    // input renders under a bare `details` key — so it must surface as a
+    // form error instead of silently vanishing into an unrendered bucket.
+    if (path === '' || path === 'details') {
+      formError ??= issue.message
+      continue
+    }
+    if (!(path in fieldErrors)) fieldErrors[path] = issue.message
   }
 
   if (Object.keys(fieldErrors).length > 0) return { ok: false, fieldErrors }
-  return { ok: false, formError: flat.formErrors[0] ?? 'Please check the values and try again.' }
+  return { ok: false, formError: formError ?? 'Please check the values and try again.' }
 }
 
 export function fromPostgrestError(error: {

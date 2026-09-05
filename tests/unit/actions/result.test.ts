@@ -16,6 +16,43 @@ describe('fromZodError', () => {
     const result = fromZodError(parsed.error!)
     expect(result).toEqual({ ok: false, formError: 'Inconsistent.' })
   })
+
+  it('keys a nested issue by its full dotted path instead of the top-level segment', () => {
+    const schema = z.object({
+      details: z.object({ term_years: z.number().int().positive() }).strict(),
+    })
+    const parsed = schema.safeParse({ details: { term_years: -5 } })
+    const result = fromZodError(parsed.error!)
+    expect(result.ok).toBe(false)
+    expect((result as { fieldErrors?: Record<string, string> }).fieldErrors).toEqual({
+      'details.term_years': 'Too small: expected number to be >0',
+    })
+  })
+
+  it('keeps unrelated top-level fields distinct when a nested field also fails', () => {
+    const schema = z.object({
+      name: z.string().min(1, 'Name is required.'),
+      details: z.object({ term_years: z.number().int().positive() }).strict(),
+    })
+    const parsed = schema.safeParse({ name: '', details: { term_years: -5 } })
+    const result = fromZodError(parsed.error!)
+    expect(result.ok).toBe(false)
+    expect((result as { fieldErrors?: Record<string, string> }).fieldErrors).toEqual({
+      name: 'Name is required.',
+      'details.term_years': 'Too small: expected number to be >0',
+    })
+  })
+
+  it('maps a whole-object failure on `details` itself to a form error, not an unrendered field key', () => {
+    const schema = z.object({
+      details: z.object({ policy_number: z.string() }).strict(),
+    })
+    const parsed = schema.safeParse({ details: { policy_number: 'P1', extra: true } })
+    const result = fromZodError(parsed.error!)
+    expect(result.ok).toBe(false)
+    expect((result as { fieldErrors?: Record<string, string> }).fieldErrors).toBeUndefined()
+    expect((result as { formError?: string }).formError).toBeTruthy()
+  })
 })
 
 describe('fromPostgrestError', () => {

@@ -67,4 +67,24 @@ describe('LifeInsuranceSection', () => {
       ),
     )
   })
+
+  it('shows a rejected details field error next to the field that caused it, keeping what was typed', async () => {
+    const createHolding = vi.fn(async () => ({
+      ok: false as const,
+      fieldErrors: { 'details.term_years': 'Term must be a positive whole number.' },
+    }))
+    renderSection({ createHolding })
+
+    fireEvent.click(screen.getByRole('button', { name: '+ Add policy' }))
+    fireEvent.change(screen.getByLabelText('Plan name'), { target: { value: 'Max Life Smart' } })
+    fireEvent.change(screen.getByLabelText('Term (years)'), { target: { value: '-5' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() =>
+      expect(screen.getByText('Term must be a positive whole number.')).toBeInTheDocument(),
+    )
+    // Never discard input: the rejected save keeps the editor open with what was typed.
+    expect(screen.getByLabelText('Plan name')).toHaveValue('Max Life Smart')
+    expect(screen.getByLabelText('Term (years)')).toHaveValue(-5)
+  })
 })

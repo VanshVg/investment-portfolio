@@ -64,3 +64,13 @@ export function setDetail(
   else next[key] = value
   return { details: next }
 }
+
+/**
+ * `fromZodError` keys nested issues by their full dotted path, so a detail
+ * field's error lives under `details.<key>`. This is the one place that
+ * prefix convention is spelled out, the same way `${id}-error` lives only in
+ * FieldError.tsx.
+ */
+export function detailError(errors: Record<string, string>, key: string): string | undefined {
+  return errors[`details.${key}`]
+}

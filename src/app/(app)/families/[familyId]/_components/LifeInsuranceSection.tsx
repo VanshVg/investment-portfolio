@@ -10,7 +10,14 @@ import { formatINR } from '@/lib/domain/money'
 import { formatDMY } from '@/lib/domain/dates'
 import type { Holding, ManagedBy, Member } from '@/lib/queries/families'
 import type { ActionResult } from '@/lib/actions/result'
-import { detail, emptyHoldingDraft, setDetail, toHoldingDraft, type HoldingDraft } from './holding-draft'
+import {
+  detail,
+  detailError,
+  emptyHoldingDraft,
+  setDetail,
+  toHoldingDraft,
+  type HoldingDraft,
+} from './holding-draft'
 
 const CELL = 'w-full rounded border border-line-strong bg-white px-1.5 py-1 text-[12.5px]'
 const DETAIL_LABEL = 'text-[11px] text-ink-soft'
@@ -130,7 +137,7 @@ export function LifeInsuranceSection({
           </td>
         </>
       )}
-      renderDetails={(draft, set) => (
+      renderDetails={(draft, set, errors) => (
         <>
           <div>
             <label htmlFor="life-policy-number" className={DETAIL_LABEL}>
@@ -141,7 +148,9 @@ export function LifeInsuranceSection({
               value={detail(draft, 'policy_number')}
               onChange={(event) => set(setDetail(draft, 'policy_number', event.target.value))}
               className={CELL}
+              {...fieldErrorProps('life-policy-number', detailError(errors, 'policy_number'))}
             />
+            <FieldError id="life-policy-number" message={detailError(errors, 'policy_number')} />
           </div>
           <div>
             <label htmlFor="life-plan-type" className={DETAIL_LABEL}>
@@ -152,7 +161,9 @@ export function LifeInsuranceSection({
               value={detail(draft, 'plan_type')}
               onChange={(event) => set(setDetail(draft, 'plan_type', event.target.value))}
               className={CELL}
+              {...fieldErrorProps('life-plan-type', detailError(errors, 'plan_type'))}
             />
+            <FieldError id="life-plan-type" message={detailError(errors, 'plan_type')} />
           </div>
           <div>
             <label htmlFor="life-term" className={DETAIL_LABEL}>
@@ -173,7 +184,9 @@ export function LifeInsuranceSection({
                 )
               }
               className={`${CELL} font-mono`}
+              {...fieldErrorProps('life-term', detailError(errors, 'term_years'))}
             />
+            <FieldError id="life-term" message={detailError(errors, 'term_years')} />
           </div>
           <div>
             <label htmlFor="life-institution" className={DETAIL_LABEL}>
