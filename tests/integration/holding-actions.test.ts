@@ -501,4 +501,168 @@ describe('createHolding / updateHolding / deleteHolding server actions', () => {
 
     await admin.from('holdings').delete().eq('id', holding!.id)
   })
+
+  // Postgres applies RLS's USING clause to UPDATE/DELETE as a row filter,
+  // not an error: an anonymous write against a real row comes back with
+  // `error: null`, and the row survives untouched. A test that only checks
+  // `result.ok` cannot see that — it has to read the row back to catch it.
+  it('reports failure, not success, when an anonymous client attempts an update, and writes nothing', async () => {
+    const admin = adminClient()
+    const { data: holding } = await admin
+      .from('holdings')
+      .insert({ family_id: familyId, category: 'life_insurance', label: 'Anon action update target' })
+      .select()
+      .single()
+
+    mockCreateServerSupabase.mockImplementationOnce(async () => anonClient())
+
+    const result = await updateHolding(holding!.id, familyId, {
+      memberId: null,
+      managedBy: 'self',
+      label: 'Hacked',
+      institution: '',
+      principalAmount: null,
+      periodicAmount: null,
+      nextDueDate: null,
+      dueFrequency: 'annual',
+      remindersEnabled: true,
+      category: 'life_insurance',
+      details: {},
+    })
+
+    expect(result.ok).toBe(false)
+
+    const { data: row } = await admin
+      .from('holdings')
+      .select('label')
+      .eq('id', holding!.id)
+      .single()
+    expect(row?.label).toBe('Anon action update target')
+
+    await admin.from('holdings').delete().eq('id', holding!.id)
+  })
+
+  it('reports failure, not success, when an anonymous client attempts a delete, and the row survives', async () => {
+    const admin = adminClient()
+    const { data: holding } = await admin
+      .from('holdings')
+      .insert({ family_id: familyId, category: 'life_insurance', label: 'Anon action delete target' })
+      .select()
+      .single()
+
+    mockCreateServerSupabase.mockImplementationOnce(async () => anonClient())
+
+    const result = await deleteHolding(holding!.id, familyId)
+
+    expect(result.ok).toBe(false)
+
+    const { data: row } = await admin
+      .from('holdings')
+      .select('id')
+      .eq('id', holding!.id)
+      .maybeSingle()
+    expect(row).not.toBeNull()
+
+    await admin.from('holdings').delete().eq('id', holding!.id)
+  })
+
+  describe('memberId ownership', () => {
+    let otherFamilyId: string
+    let otherMemberId: string
+
+    beforeAll(async () => {
+      const admin = adminClient()
+      const { data: otherFamily } = await admin
+        .from('families')
+        .insert({ name: 'Holding Fixture — other family', owner_advisor_id: advisorId })
+        .select()
+        .single()
+      otherFamilyId = otherFamily!.id
+      const { data: otherMember } = await admin
+        .from('family_members')
+        .insert({ family_id: otherFamilyId, name: 'Foreign member', relation: 'other' })
+        .select()
+        .single()
+      otherMemberId = otherMember!.id
+    })
+
+    afterAll(async () => {
+      await adminClient().from('families').delete().eq('id', otherFamilyId)
+    })
+
+    it('rejects createHolding when memberId belongs to a different family, and writes nothing', async () => {
+      const admin = adminClient()
+      const before = await admin
+        .from('holdings')
+        .select('id')
+        .eq('family_id', familyId)
+        .eq('label', 'Cross-family member probe')
+
+      const result = await createHolding(familyId, {
+        memberId: otherMemberId,
+        managedBy: 'self',
+        label: 'Cross-family member probe',
+        institution: '',
+        principalAmount: null,
+        periodicAmount: null,
+        nextDueDate: null,
+        dueFrequency: 'annual',
+        remindersEnabled: true,
+        category: 'life_insurance',
+        details: {},
+      })
+
+      expect(result.ok).toBe(false)
+      if (result.ok) throw new Error('expected failure result')
+      expect(result.fieldErrors?.memberId).toBeTruthy()
+
+      const after = await admin
+        .from('holdings')
+        .select('id')
+        .eq('family_id', familyId)
+        .eq('label', 'Cross-family member probe')
+      expect(after.data ?? []).toEqual(before.data ?? [])
+    })
+
+    it('rejects updateHolding when memberId belongs to a different family, and writes nothing', async () => {
+      const admin = adminClient()
+      const { data: holding } = await admin
+        .from('holdings')
+        .insert({
+          family_id: familyId,
+          category: 'life_insurance',
+          label: 'Cross-family update probe',
+          member_id: null,
+        })
+        .select()
+        .single()
+
+      const result = await updateHolding(holding!.id, familyId, {
+        memberId: otherMemberId,
+        managedBy: 'self',
+        label: 'Cross-family update probe',
+        institution: '',
+        principalAmount: null,
+        periodicAmount: null,
+        nextDueDate: null,
+        dueFrequency: 'annual',
+        remindersEnabled: true,
+        category: 'life_insurance',
+        details: {},
+      })
+
+      expect(result.ok).toBe(false)
+      if (result.ok) throw new Error('expected failure result')
+      expect(result.fieldErrors?.memberId).toBeTruthy()
+
+      const { data: row } = await admin
+        .from('holdings')
+        .select('member_id')
+        .eq('id', holding!.id)
+        .single()
+      expect(row?.member_id).toBeNull()
+
+      await admin.from('holdings').delete().eq('id', holding!.id)
+    })
+  })
 })

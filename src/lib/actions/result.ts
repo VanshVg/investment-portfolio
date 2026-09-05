@@ -55,6 +55,22 @@ export function fromZodError(error: z.ZodError): ActionResult {
   return { ok: false, formError: formError ?? 'Please check the values and try again.' }
 }
 
+/**
+ * Postgres applies RLS's USING clause to UPDATE/DELETE as a row filter, not
+ * an error: a write RLS blocks comes back as `{ error: null, data: [] }`,
+ * which is indistinguishable at the driver level from the row having been
+ * deleted by someone else a moment earlier. Both look identical to the
+ * advisor, so one message covers both instead of guessing which occurred.
+ * Callers detect this by adding `.select('id')` to the write and checking
+ * for an empty result — the error stays null either way.
+ */
+export function fromEmptyWrite(): ActionResult {
+  return {
+    ok: false,
+    formError: 'That record could not be saved. It may have changed or been removed — refresh and try again.',
+  }
+}
+
 export function fromPostgrestError(error: {
   code?: string | null
   message?: string | null

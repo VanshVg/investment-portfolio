@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { createServerSupabase } from '@/lib/supabase/server'
 import { familyInput } from '@/lib/validation/families'
-import { fromPostgrestError, fromZodError, type ActionResult } from '@/lib/actions/result'
+import { fromPostgrestError, fromZodError, fromEmptyWrite, type ActionResult } from '@/lib/actions/result'
 
 export async function createFamily(input: unknown): Promise<ActionResult> {
   const parsed = familyInput.safeParse(input)
@@ -40,7 +40,10 @@ export async function updateFamily(id: string, input: unknown): Promise<ActionRe
   if (!parsed.success) return fromZodError(parsed.error)
 
   const supabase = await createServerSupabase()
-  const { error } = await supabase
+  // RLS applies the USING clause to UPDATE as a row filter, not an error, so
+  // `.select('id')` is required to tell "updated" from "RLS silently kept
+  // the row unchanged" — an empty error-free result is the latter.
+  const { data, error } = await supabase
     .from('families')
     .update({
       name: parsed.data.name,
@@ -51,8 +54,10 @@ export async function updateFamily(id: string, input: unknown): Promise<ActionRe
       assumed_cagr: parsed.data.assumedCagr,
     })
     .eq('id', id)
+    .select('id')
 
   if (error) return fromPostgrestError(error)
+  if (!data || data.length === 0) return fromEmptyWrite()
 
   revalidatePath('/families')
   revalidatePath(`/families/${id}`)
@@ -63,8 +68,13 @@ export async function deleteFamily(id: string): Promise<ActionResult> {
   const supabase = await createServerSupabase()
   // Cascades to members, holdings, due instances, reminder rules and the
   // reminder log. This is the DPDP erasure path, so it is a hard delete.
-  const { error } = await supabase.from('families').delete().eq('id', id)
+  // RLS applies its USING clause to DELETE as a row filter, not an error, so
+  // a blocked delete comes back as `{ error: null }` with the row intact —
+  // `.select('id')` is required to tell that apart from an actual delete,
+  // which matters enormously on the path that is supposed to prove erasure.
+  const { data, error } = await supabase.from('families').delete().eq('id', id).select('id')
   if (error) return fromPostgrestError(error)
+  if (!data || data.length === 0) return fromEmptyWrite()
 
   revalidatePath('/families')
   return { ok: true, id }

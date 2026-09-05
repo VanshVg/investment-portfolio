@@ -245,4 +245,61 @@ describe('createMember / updateMember / deleteMember server actions', () => {
       .eq('name', 'Consent without mobile')
     expect(after.data ?? []).toEqual(before.data ?? [])
   })
+
+  // Postgres applies RLS's USING clause to UPDATE/DELETE as a row filter,
+  // not an error: an anonymous write against a real row comes back with
+  // `error: null`, and the row survives untouched. A test that only checks
+  // `result.ok` cannot see that — it has to read the row back to catch it.
+  it('reports failure, not success, when an anonymous client attempts an update, and writes nothing', async () => {
+    const admin = adminClient()
+    const { data: member } = await admin
+      .from('family_members')
+      .insert({ family_id: familyId, name: 'Anon action update target', relation: 'other' })
+      .select()
+      .single()
+
+    mockCreateServerSupabase.mockImplementationOnce(async () => anonClient())
+
+    const result = await updateMember(member!.id, familyId, {
+      name: 'Hacked',
+      relation: 'other',
+      mobile: '',
+      whatsappConsent: false,
+    })
+
+    expect(result.ok).toBe(false)
+
+    const { data: row } = await admin
+      .from('family_members')
+      .select('name')
+      .eq('id', member!.id)
+      .single()
+    expect(row?.name).toBe('Anon action update target')
+
+    await admin.from('family_members').delete().eq('id', member!.id)
+  })
+
+  it('reports failure, not success, when an anonymous client attempts a delete, and the row survives', async () => {
+    const admin = adminClient()
+    const { data: member } = await admin
+      .from('family_members')
+      .insert({ family_id: familyId, name: 'Anon action delete target', relation: 'other' })
+      .select()
+      .single()
+
+    mockCreateServerSupabase.mockImplementationOnce(async () => anonClient())
+
+    const result = await deleteMember(member!.id, familyId)
+
+    expect(result.ok).toBe(false)
+
+    const { data: row } = await admin
+      .from('family_members')
+      .select('id')
+      .eq('id', member!.id)
+      .maybeSingle()
+    expect(row).not.toBeNull()
+
+    await admin.from('family_members').delete().eq('id', member!.id)
+  })
 })

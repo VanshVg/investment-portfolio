@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it, vi } from 'vitest'
-import { adminClient, ensureUser, signedInClient } from '../helpers/db'
+import { adminClient, anonClient, ensureUser, signedInClient } from '../helpers/db'
 import { familyInput } from '@/lib/validation/families'
 
 const EMAIL = 'family-actions@example.test'
@@ -248,5 +248,57 @@ describe('createFamily / updateFamily / deleteFamily server actions', () => {
 
     const after = await admin.from('families').select('id').eq('name', 'Shah — invalid horizon')
     expect(after.data ?? []).toEqual(before.data ?? [])
+  })
+
+  // Postgres applies RLS's USING clause to UPDATE/DELETE as a row filter,
+  // not an error: an anonymous write against a real row comes back with
+  // `error: null`, and the row survives untouched. A test that only checks
+  // `result.ok` cannot see that — it has to read the row back to catch it.
+  it('reports failure, not success, when an anonymous client attempts an update, and writes nothing', async () => {
+    const admin = adminClient()
+    const { data: family } = await admin
+      .from('families')
+      .insert({ name: 'Shah — anon update target', owner_advisor_id: advisorId, notes: 'original' })
+      .select()
+      .single()
+
+    mockCreateServerSupabase.mockImplementationOnce(async () => anonClient())
+
+    const result = await updateFamily(family!.id, {
+      name: 'Hacked',
+      headName: '',
+      headMobile: '',
+      notes: 'hacked',
+      goalHorizonYears: '10',
+      assumedCagr: '12',
+    })
+
+    expect(result.ok).toBe(false)
+
+    const { data: row } = await admin.from('families').select('*').eq('id', family!.id).single()
+    expect(row?.name).toBe('Shah — anon update target')
+    expect(row?.notes).toBe('original')
+
+    await admin.from('families').delete().eq('id', family!.id)
+  })
+
+  it('reports failure, not success, when an anonymous client attempts a delete, and the row survives', async () => {
+    const admin = adminClient()
+    const { data: family } = await admin
+      .from('families')
+      .insert({ name: 'Shah — anon delete target', owner_advisor_id: advisorId })
+      .select()
+      .single()
+
+    mockCreateServerSupabase.mockImplementationOnce(async () => anonClient())
+
+    const result = await deleteFamily(family!.id)
+
+    expect(result.ok).toBe(false)
+
+    const { data: row } = await admin.from('families').select('id').eq('id', family!.id).maybeSingle()
+    expect(row).not.toBeNull()
+
+    await admin.from('families').delete().eq('id', family!.id)
   })
 })
