@@ -70,6 +70,25 @@ describe('MutualFundSection', () => {
     )
   })
 
+  it('sends the next SIP / review date so the reminders toggle can actually fire', async () => {
+    const { createHolding } = renderSection()
+    fireEvent.click(screen.getByRole('button', { name: '+ Add holding' }))
+    fireEvent.change(screen.getByLabelText('Fund name'), { target: { value: 'HDFC Flexi Cap' } })
+    fireEvent.change(screen.getByLabelText('Target goal'), { target: { value: '2500000' } })
+    fireEvent.change(screen.getByLabelText('Next SIP / review date'), {
+      target: { value: '15-06-2027' },
+    })
+    fireEvent.blur(screen.getByLabelText('Next SIP / review date'))
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() =>
+      expect(createHolding).toHaveBeenCalledWith(
+        'f1',
+        expect.objectContaining({ nextDueDate: '2027-06-15' }),
+      ),
+    )
+  })
+
   it('shows a rejected fund house detail error next to the field, keeping what was typed', async () => {
     const createHolding = vi.fn(async () => ({
       ok: false as const,

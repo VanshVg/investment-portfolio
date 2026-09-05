@@ -16,6 +16,22 @@ export interface FamilySummary {
   nextDueDate: string | null
 }
 
+export interface FamilyListResult {
+  families: FamilySummary[]
+  /**
+   * True when more rows matched than were returned. PostgREST caps a response
+   * at `max_rows` (1000, both locally and on the hosted default) and returns
+   * HTTP 206 with `error: null` when it truncates — a status this client
+   * never inspects — so silence here would otherwise look identical to "that
+   * is every family." Not full pagination: there is no cursor to page with,
+   * only a fact the caller must not swallow.
+   */
+  truncated: boolean
+}
+
+/** PostgREST's own cap, made explicit here instead of left implicit. */
+const DEFAULT_MAX_ROWS = 1000
+
 export interface Family {
   id: string
   name: string
@@ -58,33 +74,44 @@ export interface Holding {
  * PostgREST parses `or=(...)` as grammar, so a search term containing a comma
  * or a parenthesis would change the filter rather than be matched literally.
  * Those characters carry no search meaning here, so they are dropped.
+ *
+ * `%` and `_` are ilike wildcards (any run of characters / any one character),
+ * and PostgREST additionally treats `*` as an alias for `%` — left in, any of
+ * the three turns a search box into an unintended "match everything" or
+ * "match near enough" query. None of them is meaningful as a literal in a
+ * family/head-of-family/mobile search, so they are dropped alongside the
+ * filter-grammar characters above.
  */
 function sanitiseSearch(term: string): string {
-  return term.replace(/[,()\\]/g, ' ').trim()
+  return term.replace(/[,()\\%_*]/g, ' ').trim()
 }
 
 const num = (v: unknown): number | null => (v === null || v === undefined ? null : Number(v))
 
 export async function listFamilies(
   client: SupabaseClient<Database>,
-  { search }: { search?: string } = {},
-): Promise<FamilySummary[]> {
+  { search, maxRows = DEFAULT_MAX_ROWS }: { search?: string; maxRows?: number } = {},
+): Promise<FamilyListResult> {
   let query = client
     .from('families')
-    .select('id, name, head_name, head_mobile, family_members(count), holdings(next_due_date, reminders_enabled)')
+    .select(
+      'id, name, head_name, head_mobile, family_members(count), holdings(next_due_date, reminders_enabled)',
+      { count: 'exact' },
+    )
     .order('name', { ascending: true })
+    .range(0, maxRows - 1)
 
   const term = sanitiseSearch(search ?? '')
   if (term) {
     query = query.or(`name.ilike.%${term}%,head_name.ilike.%${term}%,head_mobile.ilike.%${term}%`)
   }
 
-  const { data, error } = await query
+  const { data, error, count } = await query
   if (error) throw new Error(`family listing failed: ${error.message}`)
 
   type Row = Record<string, unknown>
 
-  return (data ?? []).map((row: Row) => {
+  const families = (data ?? []).map((row: Row) => {
     const members = (row.family_members ?? []) as { count: number }[]
     const holdings = (row.holdings ?? []) as { next_due_date: string | null; reminders_enabled: boolean }[]
 
@@ -104,6 +131,8 @@ export async function listFamilies(
       nextDueDate: dueDates[0] ?? null,
     }
   })
+
+  return { families, truncated: typeof count === 'number' && count > families.length }
 }
 
 export async function getFamily(

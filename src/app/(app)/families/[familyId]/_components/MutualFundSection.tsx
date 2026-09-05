@@ -5,6 +5,7 @@ import { FieldError, fieldErrorProps } from '@/components/ledger/FieldError'
 import { ManagedByPill } from '@/components/ledger/ManagedByPill'
 import { MemberSelect } from '@/components/ledger/MemberSelect'
 import { MoneyInput } from '@/components/ledger/MoneyInput'
+import { DateField } from '@/components/ledger/DateField'
 import { formatINR } from '@/lib/domain/money'
 import type { Holding, ManagedBy, Member } from '@/lib/queries/families'
 import type { ActionResult } from '@/lib/actions/result'
@@ -201,6 +202,18 @@ export function MutualFundSection({
               {...fieldErrorProps('mf-horizon', detailError(errors, 'goal_horizon_years'))}
             />
             <FieldError id="mf-horizon" message={detailError(errors, 'goal_horizon_years')} />
+          </div>
+          <div>
+            <label htmlFor="mf-due" className={DETAIL_LABEL}>
+              Next SIP / review date
+            </label>
+            <DateField
+              id="mf-due"
+              label="Next SIP / review date"
+              value={draft.nextDueDate}
+              onChange={(nextDueDate) => set({ nextDueDate })}
+              error={errors.nextDueDate}
+            />
           </div>
           <div>
             <label htmlFor="mf-reminders" className={`${DETAIL_LABEL} flex items-center gap-1.5`}>

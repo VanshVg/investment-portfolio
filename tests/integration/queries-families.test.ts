@@ -55,8 +55,8 @@ describe('family queries', () => {
   })
 
   it('summarises a family with counts and the earliest reminding due date', async () => {
-    const rows = await listFamilies(client, { search: 'Query Fixture' })
-    const row = rows.find((r) => r.id === familyId)
+    const { families } = await listFamilies(client, { search: 'Query Fixture' })
+    const row = families.find((r) => r.id === familyId)
     expect(row).toBeDefined()
     expect(row!.memberCount).toBe(1)
     expect(row!.holdingCount).toBe(2)
@@ -93,6 +93,94 @@ describe('family queries', () => {
 
   it('does not break when the search term contains PostgREST filter syntax', async () => {
     // A comma or parenthesis would otherwise be parsed as filter grammar.
-    await expect(listFamilies(client, { search: 'Patel, (Ahmedabad)' })).resolves.toBeInstanceOf(Array)
+    const { families } = await listFamilies(client, { search: 'Patel, (Ahmedabad)' })
+    expect(families).toBeInstanceOf(Array)
+  })
+
+  describe('wildcard characters in the search term', () => {
+    let literalId: string
+    let decoyId: string
+
+    beforeAll(async () => {
+      // `_` is an ilike single-character wildcard: unsanitised, searching
+      // "Zqvex A_B" also matches "Zqvex AmBani..." because "A" + any single
+      // character + "B" is present as "AmB" inside it. The literal-space name
+      // is the only one that should ever match.
+      const { data: literal } = await adminClient()
+        .from('families')
+        .insert({ name: 'Zqvex A B Sanitise Probe', owner_advisor_id: advisorId })
+        .select()
+        .single()
+      literalId = literal!.id
+
+      const { data: decoy } = await adminClient()
+        .from('families')
+        .insert({ name: 'Zqvex AmBani Sanitise Probe', owner_advisor_id: advisorId })
+        .select()
+        .single()
+      decoyId = decoy!.id
+    })
+
+    afterAll(async () => {
+      await adminClient().from('families').delete().in('id', [literalId, decoyId])
+    })
+
+    it('does not let an underscore in the search term act as an ilike wildcard', async () => {
+      const { families } = await listFamilies(client, { search: 'Zqvex A_B' })
+      expect(families.map((r) => r.id)).toEqual([literalId])
+    })
+
+    it('does not let a percent sign in the search term act as an ilike wildcard', async () => {
+      const { families } = await listFamilies(client, { search: 'Zqvex A%B' })
+      expect(families.map((r) => r.id)).toEqual([literalId])
+    })
+
+    it('does not let an asterisk in the search term alias to an ilike wildcard', async () => {
+      // PostgREST treats `*` as an alias for `%` in ilike filters.
+      const { families } = await listFamilies(client, { search: 'Zqvex A*B' })
+      expect(families.map((r) => r.id)).toEqual([literalId])
+    })
+  })
+
+  describe('truncation guard', () => {
+    let probeIds: string[] = []
+
+    beforeAll(async () => {
+      const admin = adminClient()
+      const { data: a } = await admin
+        .from('families')
+        .insert({ name: 'Zzyx Truncation Probe A', owner_advisor_id: advisorId })
+        .select()
+        .single()
+      const { data: b } = await admin
+        .from('families')
+        .insert({ name: 'Zzyx Truncation Probe B', owner_advisor_id: advisorId })
+        .select()
+        .single()
+      probeIds = [a!.id, b!.id]
+    })
+
+    afterAll(async () => {
+      await adminClient().from('families').delete().in('id', probeIds)
+    })
+
+    it('is false when every matching row was returned', async () => {
+      const { families, truncated } = await listFamilies(client, { search: 'Zzyx Truncation Probe' })
+      expect(families.length).toBe(2)
+      expect(truncated).toBe(false)
+    })
+
+    it('is true when the row cap returns fewer rows than actually matched', async () => {
+      // Forcing the real 1000-row PostgREST cap would mean inserting 1000
+      // fixture rows. Capping `maxRows` down below the two fixtures above
+      // exercises the exact same "count exceeds returned rows" branch
+      // without the database bloat.
+      const { families, truncated } = await listFamilies(client, {
+        search: 'Zzyx Truncation Probe',
+        maxRows: 1,
+      })
+      expect(families.length).toBe(1)
+      expect(truncated).toBe(true)
+    })
   })
 })

@@ -10,7 +10,7 @@ export default async function FamiliesPage({
 }) {
   const { q } = await searchParams
   const supabase = await createServerSupabase()
-  const families = await listFamilies(supabase, { search: q })
+  const { families, truncated } = await listFamilies(supabase, { search: q })
 
   return (
     <div className="pt-7">
@@ -26,6 +26,12 @@ export default async function FamiliesPage({
           className="w-full max-w-sm rounded border border-line-strong bg-paper-raised px-2.5 py-2 text-[13px]"
         />
       </form>
+
+      {truncated && (
+        <p className="mb-3 rounded border border-gold bg-gold-bg px-2.5 py-2 text-[12.5px] text-gold">
+          Showing the first {families.length} families. Narrow your search to see the rest.
+        </p>
+      )}
 
       <FamilyList families={families} createFamily={createFamily} deleteFamily={deleteFamily} />
     </div>

@@ -67,6 +67,22 @@ describe('families and members', () => {
     expect(error).not.toBeNull()
   })
 
+  it('refuses consent when the mobile number is an empty string, not just when it is null', async () => {
+    // The app itself never sends '' — optionalIndianMobile maps blank input to
+    // null before it reaches the database. This check constraint is the
+    // backstop for writers that skip that validator (the Excel importer, a
+    // seed script, a future consent-only toggle action).
+    const family = await newFamily('Patel — consent guard empty string')
+    const { error } = await client.from('family_members').insert({
+      family_id: family.id,
+      name: 'Blank Mobile Probe',
+      relation: 'other',
+      mobile: '',
+      whatsapp_consent: true,
+    })
+    expect(error).not.toBeNull()
+  })
+
   it('accepts consent when a mobile number is present', async () => {
     const family = await newFamily('Patel — consent ok')
     const { error } = await client.from('family_members').insert({
