@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { formatDMY, parseDMY, toISODate } from '@/lib/domain/dates'
+import { FieldError, fieldErrorProps } from './FieldError'
 
 /**
  * Indian convention is DD-MM-YYYY; storage is always ISO. A native date input
@@ -14,12 +15,14 @@ export function DateField({
   value,
   onChange,
   hideLabel = true,
+  error,
 }: {
   id: string
   label: string
   value: string | null
   onChange: (value: string | null) => void
   hideLabel?: boolean
+  error?: string
 }) {
   const [text, setText] = useState(() => (value ? formatDMY(value) : ''))
   const [invalid, setInvalid] = useState(false)
@@ -61,15 +64,20 @@ export function DateField({
         id={id}
         value={text}
         placeholder="DD-MM-YYYY"
-        aria-invalid={invalid}
         onChange={(event) => setText(event.target.value)}
         onBlur={commit}
         className="w-full rounded border border-line-strong bg-white px-1.5 py-1 font-mono text-[12.5px]"
+        {...fieldErrorProps(id, error)}
+        aria-invalid={error ? true : invalid}
       />
-      {invalid && (
-        <span role="alert" className="text-[11px] text-rust">
-          Use DD-MM-YYYY.
-        </span>
+      {error ? (
+        <FieldError id={id} message={error} />
+      ) : (
+        invalid && (
+          <span role="alert" className="text-[11px] text-rust">
+            Use DD-MM-YYYY.
+          </span>
+        )
       )}
     </>
   )

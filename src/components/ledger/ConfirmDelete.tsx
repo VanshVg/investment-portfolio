@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useId, useState } from 'react'
 
 /**
  * Consequences are stated before the fact, and the destructive cases require the
@@ -22,6 +22,7 @@ export function ConfirmDelete({
 }) {
   const [typed, setTyped] = useState('')
   const armed = !requireTyping || typed.trim() === requireTyping
+  const nameId = useId()
 
   return (
     <div role="dialog" aria-label={title} className="rounded border border-rust bg-rust-bg p-3">
@@ -30,11 +31,11 @@ export function ConfirmDelete({
 
       {requireTyping && (
         <div className="mt-2">
-          <label htmlFor="confirm-name" className="text-[11px] text-ink-soft">
+          <label htmlFor={nameId} className="text-[11px] text-ink-soft">
             Type <strong>{requireTyping}</strong> to confirm
           </label>
           <input
-            id="confirm-name"
+            id={nameId}
             value={typed}
             onChange={(event) => setTyped(event.target.value)}
             className="mt-1 w-full rounded border border-line-strong bg-white px-2 py-1 text-[12.5px]"

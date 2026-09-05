@@ -179,4 +179,98 @@ describe('EditableSection', () => {
     fireEvent.keyDown(screen.getByLabelText('Note'), { key: 'Enter' })
     await waitFor(() => expect(onSave).toHaveBeenCalledWith({ label: 'From details' }, null))
   })
+
+  const twoRows = [
+    { id: 'r1', label: 'HDFC Click2Protect' },
+    { id: 'r2', label: 'Max Life Smart' },
+  ]
+
+  it('confirms before switching to a different row while dirty, and declining keeps the draft', () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    setup({ rows: twoRows })
+    fireEvent.click(screen.getByRole('button', { name: 'Edit HDFC Click2Protect' }))
+    fireEvent.change(screen.getByLabelText('Plan name'), { target: { value: 'changed' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Max Life Smart' }))
+
+    expect(confirmSpy).toHaveBeenCalled()
+    expect(screen.getByLabelText('Plan name')).toHaveValue('changed')
+    confirmSpy.mockRestore()
+  })
+
+  it('switches to the other row once the discard is confirmed', () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    setup({ rows: twoRows })
+    fireEvent.click(screen.getByRole('button', { name: 'Edit HDFC Click2Protect' }))
+    fireEvent.change(screen.getByLabelText('Plan name'), { target: { value: 'changed' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Max Life Smart' }))
+
+    expect(screen.getByLabelText('Plan name')).toHaveValue('Max Life Smart')
+    confirmSpy.mockRestore()
+  })
+
+  it('confirms before opening a blank draft from + Add while dirty', () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    setup()
+    fireEvent.click(screen.getByRole('button', { name: 'Edit HDFC Click2Protect' }))
+    fireEvent.change(screen.getByLabelText('Plan name'), { target: { value: 'changed' } })
+    fireEvent.click(screen.getByRole('button', { name: '+ Add policy' }))
+
+    expect(confirmSpy).toHaveBeenCalled()
+    expect(screen.getByLabelText('Plan name')).toHaveValue('changed')
+    confirmSpy.mockRestore()
+  })
+
+  it('does not commit on Enter from a select field inside the editor', () => {
+    const { onSave } = setup({
+      renderEdit: (draft: Draft, set: (patch: Partial<Draft>) => void) => (
+        <td>
+          <label htmlFor="label">Plan name</label>
+          <input id="label" value={draft.label} onChange={(e) => set({ label: e.target.value })} />
+          <label htmlFor="kind">Kind</label>
+          <select id="kind" value="" onChange={() => {}}>
+            <option value="">Choose</option>
+            <option value="term">Term</option>
+          </select>
+        </td>
+      ),
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Edit HDFC Click2Protect' }))
+    fireEvent.keyDown(screen.getByLabelText('Kind'), { key: 'Enter' })
+    expect(onSave).not.toHaveBeenCalled()
+  })
+
+  it('does not commit on Enter from a textarea inside the editor', () => {
+    const { onSave } = setup({
+      renderEdit: (draft: Draft, set: (patch: Partial<Draft>) => void) => (
+        <td>
+          <label htmlFor="label">Plan name</label>
+          <input id="label" value={draft.label} onChange={(e) => set({ label: e.target.value })} />
+          <label htmlFor="notes">Notes</label>
+          <textarea id="notes" value="" onChange={() => {}} />
+        </td>
+      ),
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Edit HDFC Click2Protect' }))
+    fireEvent.keyDown(screen.getByLabelText('Notes'), { key: 'Enter' })
+    expect(onSave).not.toHaveBeenCalled()
+  })
+
+  it('keeps the confirm dialog open, with what was typed, when a delete is rejected', async () => {
+    const onDelete = vi.fn(async () => ({ ok: false as const, formError: 'Could not delete.' }))
+    setup({
+      deleteConfirm: () => ({
+        title: 'Delete it?',
+        body: 'This cannot be undone.',
+        requireTyping: 'DELETE',
+      }),
+      onDelete,
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Delete HDFC Click2Protect' }))
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'DELETE' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
+
+    await waitFor(() => expect(screen.getByText('Could not delete.')).toBeInTheDocument())
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    expect(screen.getByRole('textbox')).toHaveValue('DELETE')
+  })
 })

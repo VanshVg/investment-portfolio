@@ -113,6 +113,15 @@ export function EditableSection<T, D>({
     close()
   }
 
+  // Every entry point that would replace the open draft — Cancel, Escape,
+  // switching to a different row's Edit, or starting a new row — must go
+  // through the same guard. Without it, the dirty check only protected the
+  // one path that happened to call it.
+  function requestOpen(next: Mode<T>) {
+    if (dirty && !window.confirm('Discard the changes to this row?')) return
+    open(next)
+  }
+
   function set(patch: Partial<D>) {
     setDraft((current) => (current === null ? current : { ...current, ...patch }))
   }
@@ -139,13 +148,22 @@ export function EditableSection<T, D>({
   function remove(row: T) {
     startTransition(async () => {
       const result = await onDelete(rowKey(row))
-      if (!result.ok) setFormError(result.formError ?? 'Could not delete.')
+      if (!result.ok) {
+        // Never discard input: a rejected delete keeps the dialog (and
+        // whatever was typed into its confirmation field) in place.
+        setFormError(result.formError ?? 'Could not delete.')
+        return
+      }
       setConfirming(null)
     })
   }
 
   function onKeyDown(event: React.KeyboardEvent) {
-    if (event.key === 'Enter' && !(event.target instanceof HTMLTextAreaElement)) {
+    if (
+      event.key === 'Enter' &&
+      !(event.target instanceof HTMLTextAreaElement) &&
+      !(event.target instanceof HTMLSelectElement)
+    ) {
       event.preventDefault()
       save()
     }
@@ -200,7 +218,7 @@ export function EditableSection<T, D>({
                     {editable && (
                       <button
                         type="button"
-                        onClick={() => open({ kind: 'edit', row })}
+                        onClick={() => requestOpen({ kind: 'edit', row })}
                         className="underline hover:text-navy"
                       >
                         Edit {label}
@@ -270,7 +288,7 @@ export function EditableSection<T, D>({
 
       <button
         type="button"
-        onClick={() => open({ kind: 'new' })}
+        onClick={() => requestOpen({ kind: 'new' })}
         className="mt-2 text-[12.5px] text-navy underline"
       >
         + {addLabel}
