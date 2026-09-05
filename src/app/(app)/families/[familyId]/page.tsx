@@ -4,6 +4,8 @@ import { createServerSupabase } from '@/lib/supabase/server'
 import { getFamily, listHoldings, listMembers } from '@/lib/queries/families'
 import { updateFamily } from '../actions'
 import { FamilyHeader } from './_components/FamilyHeader'
+import { MembersSection } from './_components/MembersSection'
+import { createMember, deleteMember, updateMember } from './member-actions'
 
 export default async function FamilyWorkspacePage({
   params,
@@ -29,6 +31,13 @@ export default async function FamilyWorkspacePage({
     fixed_income: holdings.filter((h) => h.category === 'fixed_income'),
   }
 
+  const holdingCountByMember: Record<string, number> = {}
+  for (const holding of holdings) {
+    if (holding.memberId) {
+      holdingCountByMember[holding.memberId] = (holdingCountByMember[holding.memberId] ?? 0) + 1
+    }
+  }
+
   return (
     <div className="pt-7">
       <Link href="/families" className="text-[12.5px] text-ink-soft underline">
@@ -39,9 +48,18 @@ export default async function FamilyWorkspacePage({
 
       <FamilyHeader family={family} updateFamily={updateFamily} />
 
-      {/* Sections are mounted by Tasks 8-11. Counts keep the shell honest until then. */}
+      <MembersSection
+        familyId={familyId}
+        members={members}
+        holdingCountByMember={holdingCountByMember}
+        createMember={createMember}
+        updateMember={updateMember}
+        deleteMember={deleteMember}
+      />
+
+      {/* Holding sections are mounted by Tasks 9-11. Counts keep the shell honest until then. */}
       <p className="mt-6 text-[12.5px] text-ink-soft">
-        {members.length} member(s) · {holdings.length} financial record(s)
+        {holdings.length} financial record(s)
         {' · '}
         {byCategory.life_insurance.length} life, {byCategory.general_insurance.length} general,{' '}
         {byCategory.mutual_fund.length} mutual fund, {byCategory.fixed_income.length} fixed income
