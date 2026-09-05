@@ -61,6 +61,12 @@ describe('family queries', () => {
     expect(await getFamily(client, '00000000-0000-0000-0000-000000000000')).toBeNull()
   })
 
+  it('returns null for a malformed id rather than throwing', async () => {
+    // A stale bookmark or a hand-edited URL must land on the not-found page,
+    // not the generic error page with a retry that can never succeed.
+    expect(await getFamily(client, 'not-a-uuid')).toBeNull()
+  })
+
   it('reads one family with its numeric fields as numbers', async () => {
     const family = await getFamily(client, familyId)
     expect(family!.name).toBe('Query Fixture Household')

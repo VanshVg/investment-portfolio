@@ -116,6 +116,10 @@ export async function getFamily(
     .eq('id', familyId)
     .maybeSingle()
 
+  // A malformed id cannot name a household, so it reads as absent rather than
+  // as a failure — otherwise a typo in the URL surfaces the generic error page,
+  // whose retry would fail identically forever. 22P02 is invalid_text_representation.
+  if (error?.code === '22P02') return null
   if (error) throw new Error(`family read failed: ${error.message}`)
   if (!data) return null
 
