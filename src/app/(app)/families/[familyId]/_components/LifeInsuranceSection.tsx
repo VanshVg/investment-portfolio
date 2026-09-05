@@ -199,6 +199,17 @@ export function LifeInsuranceSection({
               className={CELL}
             />
           </div>
+          <div>
+            <label htmlFor="life-reminders" className={`${DETAIL_LABEL} flex items-center gap-1.5`}>
+              <input
+                id="life-reminders"
+                type="checkbox"
+                checked={draft.remindersEnabled}
+                onChange={(event) => set({ remindersEnabled: event.target.checked })}
+              />
+              Send reminders
+            </label>
+          </div>
         </>
       )}
       toDraft={toHoldingDraft}

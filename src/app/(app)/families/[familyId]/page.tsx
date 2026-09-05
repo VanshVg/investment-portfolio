@@ -4,6 +4,7 @@ import { createServerSupabase } from '@/lib/supabase/server'
 import { getFamily, listHoldings, listMembers } from '@/lib/queries/families'
 import { updateFamily } from '../actions'
 import { FamilyHeader } from './_components/FamilyHeader'
+import { SectionNav } from './_components/SectionNav'
 import { MembersSection } from './_components/MembersSection'
 import { LifeInsuranceSection } from './_components/LifeInsuranceSection'
 import { GeneralInsuranceSection } from './_components/GeneralInsuranceSection'
@@ -53,50 +54,70 @@ export default async function FamilyWorkspacePage({
 
       <FamilyHeader family={family} updateFamily={updateFamily} />
 
-      <MembersSection
-        familyId={familyId}
-        members={members}
-        holdingCountByMember={holdingCountByMember}
-        createMember={createMember}
-        updateMember={updateMember}
-        deleteMember={deleteMember}
+      <SectionNav
+        counts={{
+          members: members.length,
+          life: byCategory.life_insurance.length,
+          general: byCategory.general_insurance.length,
+          mutual: byCategory.mutual_fund.length,
+          fixed: byCategory.fixed_income.length,
+        }}
       />
 
-      <LifeInsuranceSection
-        familyId={familyId}
-        members={members}
-        holdings={byCategory.life_insurance}
-        createHolding={createHolding}
-        updateHolding={updateHolding}
-        deleteHolding={deleteHolding}
-      />
+      <div id="members" className="scroll-mt-14">
+        <MembersSection
+          familyId={familyId}
+          members={members}
+          holdingCountByMember={holdingCountByMember}
+          createMember={createMember}
+          updateMember={updateMember}
+          deleteMember={deleteMember}
+        />
+      </div>
 
-      <GeneralInsuranceSection
-        familyId={familyId}
-        members={members}
-        holdings={byCategory.general_insurance}
-        createHolding={createHolding}
-        updateHolding={updateHolding}
-        deleteHolding={deleteHolding}
-      />
+      <div id="life" className="scroll-mt-14">
+        <LifeInsuranceSection
+          familyId={familyId}
+          members={members}
+          holdings={byCategory.life_insurance}
+          createHolding={createHolding}
+          updateHolding={updateHolding}
+          deleteHolding={deleteHolding}
+        />
+      </div>
 
-      <MutualFundSection
-        familyId={familyId}
-        members={members}
-        holdings={byCategory.mutual_fund}
-        createHolding={createHolding}
-        updateHolding={updateHolding}
-        deleteHolding={deleteHolding}
-      />
+      <div id="general" className="scroll-mt-14">
+        <GeneralInsuranceSection
+          familyId={familyId}
+          members={members}
+          holdings={byCategory.general_insurance}
+          createHolding={createHolding}
+          updateHolding={updateHolding}
+          deleteHolding={deleteHolding}
+        />
+      </div>
 
-      <FixedIncomeSection
-        familyId={familyId}
-        members={members}
-        holdings={byCategory.fixed_income}
-        createHolding={createHolding}
-        updateHolding={updateHolding}
-        deleteHolding={deleteHolding}
-      />
+      <div id="mutual" className="scroll-mt-14">
+        <MutualFundSection
+          familyId={familyId}
+          members={members}
+          holdings={byCategory.mutual_fund}
+          createHolding={createHolding}
+          updateHolding={updateHolding}
+          deleteHolding={deleteHolding}
+        />
+      </div>
+
+      <div id="fixed" className="scroll-mt-14">
+        <FixedIncomeSection
+          familyId={familyId}
+          members={members}
+          holdings={byCategory.fixed_income}
+          createHolding={createHolding}
+          updateHolding={updateHolding}
+          deleteHolding={deleteHolding}
+        />
+      </div>
 
       <p className="mt-6 text-[12.5px] text-ink-soft">
         {holdings.length} financial record(s)
