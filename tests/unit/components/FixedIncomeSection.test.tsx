@@ -85,4 +85,24 @@ describe('FixedIncomeSection', () => {
     expect(screen.getByLabelText('Description')).toHaveValue('HDFC FD')
     expect(screen.getByLabelText('Asset type')).toHaveValue('Fixed deposit')
   })
+
+  it('shows a rejected remarks detail error next to the field, keeping what was typed', async () => {
+    // remarks is written by this form, so it needs its own slot: a field the UI
+    // can populate but cannot report on fails silently if the schema ever
+    // tightens, which is the defect class every section here exists to avoid.
+    const createHolding = vi.fn(async () => ({
+      ok: false as const,
+      fieldErrors: { 'details.remarks': 'Remarks are too long.' },
+    }))
+    renderSection({ createHolding })
+
+    fireEvent.click(screen.getByRole('button', { name: '+ Add holding' }))
+    fireEvent.change(screen.getByLabelText('Description'), { target: { value: 'HDFC FD' } })
+    fireEvent.change(screen.getByLabelText('Remarks'), { target: { value: 'Joint holding' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => expect(screen.getByText('Remarks are too long.')).toBeInTheDocument())
+    expect(screen.getByLabelText('Description')).toHaveValue('HDFC FD')
+    expect(screen.getByLabelText('Remarks')).toHaveValue('Joint holding')
+  })
 })

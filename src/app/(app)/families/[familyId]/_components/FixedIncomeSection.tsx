@@ -237,7 +237,9 @@ export function FixedIncomeSection({
               value={detail(draft, 'remarks')}
               onChange={(event) => set(setDetail(draft, 'remarks', event.target.value))}
               className={CELL}
+              {...fieldErrorProps('fi-remarks', detailError(errors, 'remarks'))}
             />
+            <FieldError id="fi-remarks" message={detailError(errors, 'remarks')} />
           </div>
         </>
       )}
