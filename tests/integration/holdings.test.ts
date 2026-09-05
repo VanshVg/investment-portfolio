@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { adminClient, anonClient, ensureUser, signedInClient } from '../helpers/db'
 import type { SupabaseClient } from '@supabase/supabase-js'
 
@@ -8,6 +8,13 @@ const PASSWORD = 'test-password-123'
 let client: SupabaseClient
 let familyId: string
 let memberId: string
+
+// Cascades away the shared 'Holdings fixture' family along with every
+// member and holding row the tests below created against it, so repeated
+// local runs don't accumulate orphaned fixture data.
+afterAll(async () => {
+  await adminClient().from('families').delete().eq('id', familyId)
+})
 
 describe('holdings', () => {
   beforeAll(async () => {

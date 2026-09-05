@@ -1,5 +1,5 @@
-import { beforeAll, describe, expect, it } from 'vitest'
-import { ensureUser, signedInClient } from '../helpers/db'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { adminClient, ensureUser, signedInClient } from '../helpers/db'
 import { getFamily, listFamilies, listHoldings, listMembers } from '@/lib/queries/families'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/db/types.generated'
@@ -10,6 +10,13 @@ const PASSWORD = 'test-password-123'
 let client: SupabaseClient<Database>
 let advisorId: string
 let familyId: string
+
+// Cascades away the shared 'Query Fixture Household' family along with the
+// member and holdings the tests below created against it, so repeated local
+// runs don't accumulate orphaned fixture data.
+afterAll(async () => {
+  await adminClient().from('families').delete().eq('id', familyId)
+})
 
 describe('family queries', () => {
   beforeAll(async () => {

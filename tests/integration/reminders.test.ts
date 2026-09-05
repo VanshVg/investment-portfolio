@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { adminClient, anonClient, ensureUser, signedInClient } from '../helpers/db'
 import type { SupabaseClient } from '@supabase/supabase-js'
 
@@ -10,6 +10,11 @@ let advisorId: string
 let holdingId: string
 let dueInstanceId: string
 
+// Every family this suite creates (the shared 'Reminder fixture' household
+// plus one per write-denial fixture below) gets its id recorded here so
+// afterAll can cascade all of them away in one go.
+const familyIds: string[] = []
+
 /** A fresh, unreferenced holding — its own family too — for write-denial tests. */
 async function newFixtureHolding(label: string) {
   const { data: family, error: familyError } = await client
@@ -18,6 +23,7 @@ async function newFixtureHolding(label: string) {
     .select()
     .single()
   if (familyError) throw new Error(familyError.message)
+  familyIds.push(family!.id)
 
   const { data: holding, error: holdingError } = await client
     .from('holdings')
@@ -34,6 +40,14 @@ async function newFixtureHolding(label: string) {
   return holding!
 }
 
+// Cascades away every family this suite created, taking their holdings, due
+// instances, reminder rules and reminder log rows with them, so repeated
+// local runs don't accumulate orphaned fixture data.
+afterAll(async () => {
+  if (familyIds.length === 0) return
+  await adminClient().from('families').delete().in('id', familyIds)
+})
+
 describe('reminder rules and log', () => {
   beforeAll(async () => {
     const user = await ensureUser(EMAIL, PASSWORD, 'admin')
@@ -45,6 +59,7 @@ describe('reminder rules and log', () => {
       .insert({ name: 'Reminder fixture', owner_advisor_id: user!.id })
       .select()
       .single()
+    familyIds.push(family!.id)
 
     const { data: holding } = await client
       .from('holdings')
