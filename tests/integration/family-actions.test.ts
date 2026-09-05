@@ -1,10 +1,34 @@
-import { beforeAll, describe, expect, it } from 'vitest'
-import { adminClient, ensureUser } from '../helpers/db'
+import { beforeAll, describe, expect, it, vi } from 'vitest'
+import { adminClient, ensureUser, signedInClient } from '../helpers/db'
 import { familyInput } from '@/lib/validation/families'
 
 const EMAIL = 'family-actions@example.test'
 const PASSWORD = 'test-password-123'
 let advisorId: string
+
+const { revalidatePath, mockCreateServerSupabase } = vi.hoisted(() => ({
+  revalidatePath: vi.fn(),
+  mockCreateServerSupabase: vi.fn(),
+}))
+
+vi.mock('next/headers', () => ({
+  cookies: async () => ({
+    getAll: () => [],
+    set: () => {},
+  }),
+}))
+
+vi.mock('next/cache', () => ({
+  revalidatePath,
+}))
+
+vi.mock('@/lib/supabase/server', () => ({
+  createServerSupabase: mockCreateServerSupabase,
+}))
+
+mockCreateServerSupabase.mockImplementation(() => signedInClient(EMAIL, PASSWORD))
+
+const { createFamily, updateFamily, deleteFamily } = await import('@/app/(app)/families/actions')
 
 describe('family input and cascade behaviour', () => {
   beforeAll(async () => {
@@ -71,5 +95,158 @@ describe('family input and cascade behaviour', () => {
     expect(members).toEqual([])
     expect(holdings).toEqual([])
     expect(instances).toEqual([])
+  })
+})
+
+describe('createFamily / updateFamily / deleteFamily server actions', () => {
+  beforeAll(async () => {
+    const user = await ensureUser(EMAIL, PASSWORD, 'admin')
+    advisorId = user!.id
+  })
+
+  it('creates a family with the mapped columns and owner, and revalidates the list', async () => {
+    revalidatePath.mockClear()
+    const input = {
+      name: 'Shah — action create',
+      headName: 'Bhavesh Shah',
+      headMobile: '98765 11111',
+      notes: 'Prefers evening calls',
+      goalHorizonYears: '12',
+      assumedCagr: '11.5',
+    }
+
+    const result = await createFamily(input)
+    expect(result.ok).toBe(true)
+    if (!result.ok) throw new Error('expected ok result')
+
+    const admin = adminClient()
+    const { data: row, error } = await admin
+      .from('families')
+      .select('*')
+      .eq('id', result.id)
+      .single()
+    expect(error).toBeNull()
+    expect(row?.name).toBe('Shah — action create')
+    expect(row?.head_name).toBe('Bhavesh Shah')
+    expect(row?.head_mobile).toBe('+919876511111')
+    expect(row?.notes).toBe('Prefers evening calls')
+    expect(row?.goal_horizon_years).toBe(12)
+    expect(Number(row?.assumed_cagr)).toBe(11.5)
+    expect(row?.owner_advisor_id).toBe(advisorId)
+
+    expect(revalidatePath).toHaveBeenCalledWith('/families')
+
+    await admin.from('families').delete().eq('id', result.id)
+  })
+
+  it('updates the intended fields without touching owner_advisor_id', async () => {
+    const admin = adminClient()
+    const { data: family } = await admin
+      .from('families')
+      .insert({ name: 'Shah — action update', owner_advisor_id: advisorId })
+      .select()
+      .single()
+
+    revalidatePath.mockClear()
+    const result = await updateFamily(family!.id, {
+      name: 'Shah — action update (renamed)',
+      headName: 'Renamed Head',
+      headMobile: '',
+      notes: '',
+      goalHorizonYears: '20',
+      assumedCagr: '9',
+    })
+    expect(result.ok).toBe(true)
+
+    const { data: row } = await admin.from('families').select('*').eq('id', family!.id).single()
+    expect(row?.name).toBe('Shah — action update (renamed)')
+    expect(row?.head_name).toBe('Renamed Head')
+    expect(row?.goal_horizon_years).toBe(20)
+    expect(Number(row?.assumed_cagr)).toBe(9)
+    expect(row?.owner_advisor_id).toBe(advisorId)
+
+    expect(revalidatePath).toHaveBeenCalledWith('/families')
+    expect(revalidatePath).toHaveBeenCalledWith(`/families/${family!.id}`)
+
+    await admin.from('families').delete().eq('id', family!.id)
+  })
+
+  it('deletes the family and cascades to its dependents through the action', async () => {
+    const admin = adminClient()
+    const { data: family } = await admin
+      .from('families')
+      .insert({ name: 'Shah — action delete', owner_advisor_id: advisorId })
+      .select()
+      .single()
+    await admin.from('family_members').insert({ family_id: family!.id, name: 'Dep', relation: 'other' })
+    await admin
+      .from('holdings')
+      .insert({ family_id: family!.id, category: 'life_insurance', label: 'Dep holding' })
+
+    revalidatePath.mockClear()
+    const result = await deleteFamily(family!.id)
+    expect(result.ok).toBe(true)
+
+    const { data: row } = await admin.from('families').select('id').eq('id', family!.id).maybeSingle()
+    expect(row).toBeNull()
+
+    const { data: members } = await admin
+      .from('family_members')
+      .select('id')
+      .eq('family_id', family!.id)
+    const { data: holdings } = await admin.from('holdings').select('id').eq('family_id', family!.id)
+    expect(members).toEqual([])
+    expect(holdings).toEqual([])
+
+    expect(revalidatePath).toHaveBeenCalledWith('/families')
+  })
+
+  it('returns a failure result without writing when no user is signed in', async () => {
+    mockCreateServerSupabase.mockImplementationOnce(async () => {
+      const client = await signedInClient(EMAIL, PASSWORD)
+      client.auth.getUser = (async () => ({
+        data: { user: null },
+        error: null,
+      })) as unknown as typeof client.auth.getUser
+      return client
+    })
+
+    const admin = adminClient()
+    const before = await admin.from('families').select('id').eq('name', 'Shah — no session')
+
+    const result = await createFamily({
+      name: 'Shah — no session',
+      headName: '',
+      headMobile: '',
+      notes: '',
+      goalHorizonYears: '10',
+      assumedCagr: '12',
+    })
+
+    expect(result).toEqual({ ok: false, formError: 'Your session has expired. Sign in again.' })
+
+    const after = await admin.from('families').select('id').eq('name', 'Shah — no session')
+    expect(after.data?.length ?? 0).toBe(before.data?.length ?? 0)
+  })
+
+  it('rejects invalid input and writes nothing to the database', async () => {
+    const admin = adminClient()
+    const before = await admin.from('families').select('id').eq('name', 'Shah — invalid horizon')
+
+    const result = await createFamily({
+      name: 'Shah — invalid horizon',
+      headName: '',
+      headMobile: '',
+      notes: '',
+      goalHorizonYears: '99',
+      assumedCagr: '12',
+    })
+
+    expect(result.ok).toBe(false)
+    if (result.ok) throw new Error('expected failure result')
+    expect(result.fieldErrors?.goalHorizonYears).toBeTruthy()
+
+    const after = await admin.from('families').select('id').eq('name', 'Shah — invalid horizon')
+    expect(after.data ?? []).toEqual(before.data ?? [])
   })
 })
