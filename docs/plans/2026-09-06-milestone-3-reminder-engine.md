@@ -444,11 +444,19 @@ export async function ensureDueInstances(
   if (!holding) return NOTHING
 
   // The anchor defines the grid; next_due_date defines where this system's
-  // responsibility starts. A holding missing either has no schedule to generate.
-  const anchor = holding.anchor_due_date ?? holding.next_due_date
-  if (!anchor || !holding.next_due_date) return NOTHING
+  // responsibility starts. A holding missing either has no schedule to
+  // generate. Deliberately no fallback from one to the other: the spec says a
+  // holding with no anchor is skipped, and reconcileDueInstances applies the
+  // same rule. Two functions in one module disagreeing about what counts as a
+  // schedule is worse than either answer on its own.
+  if (!holding.anchor_due_date || !holding.next_due_date) return NOTHING
 
-  const dates = dueDatesBetween(anchor, holding.due_frequency, holding.next_due_date, through)
+  const dates = dueDatesBetween(
+    holding.anchor_due_date,
+    holding.due_frequency,
+    holding.next_due_date,
+    through,
+  )
   if (dates.length === 0) return NOTHING
 
   // Step 1 — insert what is missing. ignoreDuplicates means existing rows are
@@ -601,10 +609,18 @@ export async function reconcileDueInstances(
   if (!holding) return { deleted: 0, preserved: 0, created: 0, refreshed: 0 }
 
   const today = new Date().toISOString().slice(0, 10)
-  const anchor = holding.anchor_due_date ?? holding.next_due_date
+  // Same rule as ensureDueInstances, deliberately: no fallback from one date
+  // column to the other. A holding without an anchor has no schedule, so
+  // nothing is "wanted" and every future instance is off-schedule by
+  // definition — which the preservation rules below then handle correctly.
   const wanted =
-    anchor && holding.next_due_date
-      ? dueDatesBetween(anchor, holding.due_frequency, holding.next_due_date, through)
+    holding.anchor_due_date && holding.next_due_date
+      ? dueDatesBetween(
+          holding.anchor_due_date,
+          holding.due_frequency,
+          holding.next_due_date,
+          through,
+        )
       : []
 
   // Every future instance, with the one fact that decides its fate: whether a
