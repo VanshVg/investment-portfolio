@@ -1,0 +1,156 @@
+'use server'
+
+import { revalidatePath } from 'next/cache'
+import { createServerSupabase } from '@/lib/supabase/server'
+import { holdingInput } from '@/lib/validation/holdings'
+import { applyDueDateEdit } from '@/lib/domain/due-dates'
+import { fromPostgrestError, fromZodError, fromEmptyWrite, type ActionResult } from '@/lib/actions/result'
+import type { SupabaseClient } from '@supabase/supabase-js'
+import type { Database } from '@/lib/db/types.generated'
+
+const MEMBER_NOT_IN_FAMILY_ERROR: ActionResult = {
+  ok: false,
+  fieldErrors: { memberId: 'That family member does not belong to this household.' },
+}
+
+/**
+ * `member_id` only has a foreign key to `family_members`, which checks that
+ * the row exists, not that it belongs to this household — so without this
+ * check a member id borrowed from a different family would be accepted.
+ */
+async function memberBelongsToFamily(
+  supabase: SupabaseClient<Database>,
+  memberId: string,
+  familyId: string,
+): Promise<ActionResult | null> {
+  const { data, error } = await supabase
+    .from('family_members')
+    .select('id')
+    .eq('id', memberId)
+    .eq('family_id', familyId)
+    .maybeSingle()
+  if (error) return fromPostgrestError(error)
+  if (!data) return MEMBER_NOT_IN_FAMILY_ERROR
+  return null
+}
+
+export async function createHolding(familyId: string, input: unknown): Promise<ActionResult> {
+  const parsed = holdingInput.safeParse(input)
+  if (!parsed.success) return fromZodError(parsed.error)
+  const value = parsed.data
+
+  const supabase = await createServerSupabase()
+
+  if (value.memberId !== null) {
+    const membershipError = await memberBelongsToFamily(supabase, value.memberId, familyId)
+    if (membershipError) return membershipError
+  }
+
+  const { data, error } = await supabase
+    .from('holdings')
+    .insert({
+      family_id: familyId,
+      member_id: value.memberId,
+      category: value.category,
+      managed_by: value.managedBy,
+      label: value.label,
+      institution: value.institution,
+      principal_amount: value.principalAmount,
+      periodic_amount: value.periodicAmount,
+      // A new record's first due date is by definition its anchor.
+      anchor_due_date: value.nextDueDate,
+      next_due_date: value.nextDueDate,
+      due_frequency: value.dueFrequency,
+      reminders_enabled: value.remindersEnabled,
+      details: value.details,
+    })
+    .select('id')
+    .single()
+
+  if (error) return fromPostgrestError(error)
+
+  revalidatePath(`/families/${familyId}`)
+  return { ok: true, id: data!.id }
+}
+
+export async function updateHolding(
+  id: string,
+  familyId: string,
+  input: unknown,
+): Promise<ActionResult> {
+  const parsed = holdingInput.safeParse(input)
+  if (!parsed.success) return fromZodError(parsed.error)
+  const value = parsed.data
+
+  const supabase = await createServerSupabase()
+
+  // The current schedule is needed to decide whether this is a real date edit,
+  // and the current category is needed below to guard against `details` meant
+  // for a different category ending up on this row (category itself is never
+  // written by this action, so the column can never actually change).
+  const { data: current, error: readError } = await supabase
+    .from('holdings')
+    .select('anchor_due_date, next_due_date, category')
+    .eq('id', id)
+    .single()
+  if (readError) return fromPostgrestError(readError)
+
+  if (current!.category !== value.category) {
+    return {
+      ok: false,
+      formError: 'The category on this record cannot be changed here. Refresh the page and try again.',
+    }
+  }
+
+  if (value.memberId !== null) {
+    const membershipError = await memberBelongsToFamily(supabase, value.memberId, familyId)
+    if (membershipError) return membershipError
+  }
+
+  const schedule = applyDueDateEdit(
+    { anchorDueDate: current!.anchor_due_date, nextDueDate: current!.next_due_date },
+    value.nextDueDate,
+  )
+
+  // The category pre-read above already proves this row is readable under RLS,
+  // but a SELECT policy passing says nothing about the UPDATE policy: they are
+  // separate grants in Postgres and can diverge. `.select('id')` makes that
+  // check explicit here instead of relying on the pre-read as an accident.
+  const { data: updated, error } = await supabase
+    .from('holdings')
+    .update({
+      member_id: value.memberId,
+      managed_by: value.managedBy,
+      label: value.label,
+      institution: value.institution,
+      principal_amount: value.principalAmount,
+      periodic_amount: value.periodicAmount,
+      anchor_due_date: schedule.anchorDueDate,
+      next_due_date: schedule.nextDueDate,
+      due_frequency: value.dueFrequency,
+      reminders_enabled: value.remindersEnabled,
+      details: value.details,
+    })
+    .eq('id', id)
+    .select('id')
+
+  if (error) return fromPostgrestError(error)
+  if (!updated || updated.length === 0) return fromEmptyWrite()
+
+  revalidatePath(`/families/${familyId}`)
+  return { ok: true, id }
+}
+
+export async function deleteHolding(id: string, familyId: string): Promise<ActionResult> {
+  const supabase = await createServerSupabase()
+  // Cascades to due_instances, reminder_rules and reminder_log for this record.
+  // Postgres applies RLS's USING clause to DELETE as a row filter, not an
+  // error, so `.select('id')` is required to tell "deleted" from "RLS
+  // silently kept the row" — an empty error-free result is the latter.
+  const { data: deleted, error } = await supabase.from('holdings').delete().eq('id', id).select('id')
+  if (error) return fromPostgrestError(error)
+  if (!deleted || deleted.length === 0) return fromEmptyWrite()
+
+  revalidatePath(`/families/${familyId}`)
+  return { ok: true, id }
+}

@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { adminClient, anonClient, ensureUser, signedInClient } from '../helpers/db'
 import type { SupabaseClient } from '@supabase/supabase-js'
 
@@ -8,6 +8,12 @@ const PASSWORD = 'test-password-123'
 let client: SupabaseClient
 let advisorId: string
 
+// Every family this suite creates gets its id recorded here so afterAll can
+// cascade all of them away in one go, even the one or two that a test
+// already deleted itself along the way (a delete of an id that is no longer
+// there is a no-op, not an error).
+const familyIds: string[] = []
+
 async function newFamily(name: string) {
   const { data, error } = await client
     .from('families')
@@ -15,8 +21,16 @@ async function newFamily(name: string) {
     .select()
     .single()
   if (error) throw new Error(error.message)
+  familyIds.push(data!.id)
   return data
 }
+
+// Cascades away every family this suite created, taking their members with
+// them, so repeated local runs don't accumulate orphaned fixture data.
+afterAll(async () => {
+  if (familyIds.length === 0) return
+  await adminClient().from('families').delete().in('id', familyIds)
+})
 
 describe('families and members', () => {
   beforeAll(async () => {
@@ -48,6 +62,22 @@ describe('families and members', () => {
       family_id: family.id,
       name: 'Aarav Patel',
       relation: 'son',
+      whatsapp_consent: true,
+    })
+    expect(error).not.toBeNull()
+  })
+
+  it('refuses consent when the mobile number is an empty string, not just when it is null', async () => {
+    // The app itself never sends '' — optionalIndianMobile maps blank input to
+    // null before it reaches the database. This check constraint is the
+    // backstop for writers that skip that validator (the Excel importer, a
+    // seed script, a future consent-only toggle action).
+    const family = await newFamily('Patel — consent guard empty string')
+    const { error } = await client.from('family_members').insert({
+      family_id: family.id,
+      name: 'Blank Mobile Probe',
+      relation: 'other',
+      mobile: '',
       whatsapp_consent: true,
     })
     expect(error).not.toBeNull()

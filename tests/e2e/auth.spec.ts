@@ -22,7 +22,7 @@ test('signs in with valid credentials and reaches the dashboard', async ({ page 
   await page.getByLabel('Email', { exact: true }).fill(EMAIL)
   await page.getByLabel('Password', { exact: true }).fill(PASSWORD)
   await page.getByRole('button', { name: 'Sign in' }).click()
-  await expect(page).toHaveURL('http://localhost:3000/')
+  await expect(page).toHaveURL('http://localhost:3000/families')
   await expect(page.getByRole('button', { name: 'Sign out' })).toBeVisible()
 })
 

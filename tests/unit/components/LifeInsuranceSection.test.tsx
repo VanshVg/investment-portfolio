@@ -1,0 +1,106 @@
+// @vitest-environment jsdom
+import { describe, expect, it, vi } from 'vitest'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { LifeInsuranceSection } from '@/app/(app)/families/[familyId]/_components/LifeInsuranceSection'
+
+const ok = async () => ({ ok: true as const, id: 'h1' })
+
+const holdings = [
+  {
+    id: 'h1',
+    familyId: 'f1',
+    memberId: null,
+    category: 'life_insurance' as const,
+    managedBy: 'self' as const,
+    label: 'HDFC Click2Protect',
+    institution: 'HDFC Life',
+    principalAmount: 5000000,
+    periodicAmount: 12500,
+    anchorDueDate: '2026-03-12',
+    nextDueDate: '2027-03-12',
+    dueFrequency: 'annual' as const,
+    remindersEnabled: true,
+    details: { policy_number: 'P/1234', term_years: 20 },
+  },
+]
+
+function renderSection(overrides = {}) {
+  const createHolding = vi.fn(ok)
+  render(
+    <LifeInsuranceSection
+      familyId="f1"
+      members={[]}
+      holdings={holdings}
+      createHolding={createHolding}
+      updateHolding={ok}
+      deleteHolding={ok}
+      {...overrides}
+    />,
+  )
+  return { createHolding }
+}
+
+describe('LifeInsuranceSection', () => {
+  it('formats amounts in Indian notation and dates as DD-MM-YYYY', () => {
+    renderSection()
+    expect(screen.getByText('12-03-2027')).toBeInTheDocument()
+    expect(screen.getByText('With us')).toBeInTheDocument()
+  })
+
+  it('reveals the detail fields only while editing', () => {
+    renderSection()
+    expect(screen.queryByLabelText('Policy number')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Edit HDFC Click2Protect' }))
+    expect(screen.getByLabelText('Policy number')).toHaveValue('P/1234')
+  })
+
+  it('sends the category with the draft so the union can discriminate', async () => {
+    const { createHolding } = renderSection()
+    fireEvent.click(screen.getByRole('button', { name: '+ Add policy' }))
+    fireEvent.change(screen.getByLabelText('Plan name'), { target: { value: 'Max Life Smart' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() =>
+      expect(createHolding).toHaveBeenCalledWith(
+        'f1',
+        expect.objectContaining({ category: 'life_insurance', label: 'Max Life Smart' }),
+      ),
+    )
+  })
+
+  it('shows a rejected details field error next to the field that caused it, keeping what was typed', async () => {
+    const createHolding = vi.fn(async () => ({
+      ok: false as const,
+      fieldErrors: { 'details.term_years': 'Term must be a positive whole number.' },
+    }))
+    renderSection({ createHolding })
+
+    fireEvent.click(screen.getByRole('button', { name: '+ Add policy' }))
+    fireEvent.change(screen.getByLabelText('Plan name'), { target: { value: 'Max Life Smart' } })
+    fireEvent.change(screen.getByLabelText('Term (years)'), { target: { value: '-5' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() =>
+      expect(screen.getByText('Term must be a positive whole number.')).toBeInTheDocument(),
+    )
+    // Never discard input: the rejected save keeps the editor open with what was typed.
+    expect(screen.getByLabelText('Plan name')).toHaveValue('Max Life Smart')
+    expect(screen.getByLabelText('Term (years)')).toHaveValue(-5)
+  })
+  it('carries the reminder toggle through to the saved holding', async () => {
+    // Insurance renewals are exactly what an advisor wants chasing, so the
+    // toggle defaults on here — but it has to actually reach the payload.
+    const { createHolding } = renderSection()
+
+    fireEvent.click(screen.getByRole('button', { name: '+ Add policy' }))
+    expect(screen.getByLabelText('Send reminders')).toBeChecked()
+
+    fireEvent.change(screen.getByLabelText('Plan name'), { target: { value: 'Max Life Smart' } })
+    fireEvent.click(screen.getByLabelText('Send reminders'))
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => expect(createHolding).toHaveBeenCalled())
+    const input = (createHolding.mock.calls[0] as unknown[])[1] as Record<string, unknown>
+    expect(input.remindersEnabled).toBe(false)
+  })
+})

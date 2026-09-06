@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { nextDueDateAfter, nthDueDate } from '@/lib/domain/due-dates'
+import { applyDueDateEdit, nextDueDateAfter, nthDueDate } from '@/lib/domain/due-dates'
 import { toISODate } from '@/lib/domain/dates'
 
 const iso = (d: Date | null) => (d ? toISODate(d) : null)
@@ -50,5 +50,33 @@ describe('nextDueDateAfter', () => {
 
   it('handles an anchor many years in the past without drifting', () => {
     expect(iso(nextDueDateAfter(at('2010-01-31'), 'monthly', at('2026-09-04')))).toBe('2026-09-30')
+  })
+})
+
+describe('applyDueDateEdit', () => {
+  const current = { anchorDueDate: '2026-01-15', nextDueDate: '2027-01-15' }
+
+  it('re-anchors when the advisor changes the due date', () => {
+    // A correction is the new truth: every future occurrence derives from it.
+    expect(applyDueDateEdit(current, '2027-01-20')).toEqual({
+      anchorDueDate: '2027-01-20',
+      nextDueDate: '2027-01-20',
+    })
+  })
+
+  it('leaves the anchor untouched when the date was not edited', () => {
+    // Saving an unrelated field must not silently rewrite the schedule.
+    expect(applyDueDateEdit(current, '2027-01-15')).toEqual(current)
+  })
+
+  it('re-anchors when a date is added to a holding that had none', () => {
+    expect(applyDueDateEdit({ anchorDueDate: null, nextDueDate: null }, '2027-06-01')).toEqual({
+      anchorDueDate: '2027-06-01',
+      nextDueDate: '2027-06-01',
+    })
+  })
+
+  it('clears both columns when the date is removed', () => {
+    expect(applyDueDateEdit(current, null)).toEqual({ anchorDueDate: null, nextDueDate: null })
   })
 })

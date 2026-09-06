@@ -51,3 +51,31 @@ export function nextDueDateAfter(
 
   return null
 }
+
+export interface DueDateSchedule {
+  anchorDueDate: string | null
+  nextDueDate: string | null
+}
+
+/**
+ * Applies a manual due-date edit.
+ *
+ * A correction re-anchors: the submitted date becomes both the next occurrence
+ * and the anchor every future occurrence derives from, so the correction sticks
+ * instead of being snapped away by the next renewal.
+ *
+ * Contrast "mark as renewed" (Milestone 3), which advances along the existing
+ * grid and deliberately leaves the anchor alone. Two operations write the same
+ * column with opposite anchor behaviour — keeping both described here is what
+ * stops one being mistaken for the other.
+ *
+ * An unchanged date is not an edit, so saving some other field on the row must
+ * not rewrite the schedule.
+ */
+export function applyDueDateEdit(
+  current: DueDateSchedule,
+  submittedDueDate: string | null,
+): DueDateSchedule {
+  if (submittedDueDate === current.nextDueDate) return current
+  return { anchorDueDate: submittedDueDate, nextDueDate: submittedDueDate }
+}
