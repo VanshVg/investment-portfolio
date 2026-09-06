@@ -140,16 +140,26 @@ Each has one purpose, a stated interface, and can be tested without the others.
 ### `src/lib/domain/due-schedule.ts` (pure)
 
 ```ts
-function dueDatesThrough(
+function dueDatesBetween(
   anchor: string,        // ISO yyyy-mm-dd
   frequency: DueFrequency,
+  from: string,          // ISO yyyy-mm-dd, inclusive
   through: string,       // ISO yyyy-mm-dd, inclusive
 ): string[]
 ```
 
-Uses the existing anchor arithmetic (`anchor + n × step`) rather than repeatedly
-adding a period, so month-ends do not drift. `one_time` returns at most the
-anchor itself. No database access, no clock — `through` is passed in.
+Occurrences on the anchor grid that fall within `[from, through]`.
+
+Uses the existing `nthDueDate` (`anchor + n × step`) rather than repeatedly
+adding a period, so month-ends do not drift. `one_time` yields at most the
+anchor itself. No database access, no clock — both bounds are passed in.
+
+**The lower bound is not optional.** Without it, a monthly SIP anchored in 2015
+would generate around 140 historical instances the first time it is saved.
+Callers pass the holding's `next_due_date` as `from`: that is by definition the
+first unresolved date, so anything earlier is history this system was not
+present for and must not invent. A `next_due_date` already in the past is
+included, which is correct — an overdue renewal belongs on the page.
 
 ### `src/lib/reminders/ensure-due-instances.ts`
 
@@ -158,10 +168,11 @@ function ensureDueInstances(
   client: SupabaseClient<Database>,
   holdingId: string,
   through: string,
-): Promise<{ created: number }>
+): Promise<{ created: number; refreshed: number }>
 ```
 
-Reads the holding, computes the schedule, and writes in two steps. The second
+Reads the holding, computes the schedule from its `next_due_date` through
+`through`, and writes in two steps. The second
 step is not optional: an `ignoreDuplicates` upsert by definition leaves existing
 rows alone, so it can neither clear `off_schedule` nor refresh an amount.
 
