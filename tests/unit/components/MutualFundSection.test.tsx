@@ -89,22 +89,24 @@ describe('MutualFundSection', () => {
     )
   })
 
-  it('shows a rejected fund house detail error next to the field, keeping what was typed', async () => {
-    const createHolding = vi.fn(async () => ({
-      ok: false as const,
-      fieldErrors: { 'details.fund_house': 'Enter at least one character.' },
-    }))
-    renderSection({ createHolding })
-
+  it('sends the fund house as the top-level institution field, not a details key', async () => {
+    // The fund house is stored in the same institution column the other
+    // three sections use — a details.fund_house key would be rejected by the
+    // strict mutual fund schema.
+    const { createHolding } = renderSection()
     fireEvent.click(screen.getByRole('button', { name: '+ Add holding' }))
     fireEvent.change(screen.getByLabelText('Fund name'), { target: { value: 'HDFC Flexi Cap' } })
     fireEvent.change(screen.getByLabelText('Target goal'), { target: { value: '2500000' } })
+    fireEvent.change(screen.getByLabelText('Fund house'), { target: { value: 'HDFC AMC' } })
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
 
     await waitFor(() =>
-      expect(screen.getByText('Enter at least one character.')).toBeInTheDocument(),
+      expect(createHolding).toHaveBeenCalledWith(
+        'f1',
+        expect.objectContaining({ institution: 'HDFC AMC' }),
+      ),
     )
-    expect(screen.getByLabelText('Fund name')).toHaveValue('HDFC Flexi Cap')
-    expect(screen.getByLabelText('Target goal')).toHaveValue(2500000)
+    const input = (createHolding.mock.calls[0] as unknown[])[1] as Record<string, unknown>
+    expect((input.details as Record<string, unknown>).fund_house).toBeUndefined()
   })
 })

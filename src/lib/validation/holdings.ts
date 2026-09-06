@@ -3,12 +3,18 @@ import { z } from 'zod'
 /** Storage format is always ISO yyyy-mm-dd; DD-MM-YYYY exists only in the UI. */
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'expected yyyy-mm-dd')
 
+// maturity_date was removed: nothing in the UI, seed script, or importer ever
+// wrote it (life cover doesn't mature the way an FD does — its renewal date
+// already lives in next_due_date), and .strict() makes a field cheap to drop
+// now and expensive to add back once real rows exist. If a real need for a
+// separate maturity date on life policies shows up, re-add it here with a
+// writer and an allowlist entry (see tests/unit/components/error-slots.test.tsx)
+// rather than leaving it silently unused again.
 export const lifeInsuranceDetails = z
   .object({
     policy_number: z.string().min(1).optional(),
     plan_type: z.string().min(1).optional(),
     term_years: z.number().int().positive().optional(),
-    maturity_date: isoDate.optional(),
   })
   .strict()
 
@@ -26,7 +32,6 @@ export const mutualFundDetails = z
     target_goal: z.number().nonnegative(),
     goal_horizon_years: z.number().int().positive().optional(),
     folio_number: z.string().min(1).optional(),
-    fund_house: z.string().min(1).optional(),
   })
   .strict()
 
@@ -50,14 +55,6 @@ export const holdingDetailSchemas = {
 export type HoldingCategory = keyof typeof holdingDetailSchemas
 export type HoldingDetails = {
   [K in HoldingCategory]: z.infer<(typeof holdingDetailSchemas)[K]>
-}
-
-/** Validates the JSONB payload for a holding. Throws ZodError when invalid. */
-export function parseHoldingDetails<C extends HoldingCategory>(
-  category: C,
-  details: unknown,
-): HoldingDetails[C] {
-  return holdingDetailSchemas[category].parse(details) as HoldingDetails[C]
 }
 
 // Null is included explicitly in the input union for uniformity and visibility

@@ -168,17 +168,18 @@ export function MutualFundSection({
             <FieldError id="mf-folio" message={detailError(errors, 'folio_number')} />
           </div>
           <div>
+            {/* Fund house lives in the top-level institution column, same as
+                the insurer/institution field on the other three sections —
+                not in details, which would make it the odd one out. */}
             <label htmlFor="mf-house" className={DETAIL_LABEL}>
               Fund house
             </label>
             <input
               id="mf-house"
-              value={detail(draft, 'fund_house')}
-              onChange={(event) => set(setDetail(draft, 'fund_house', event.target.value))}
+              value={draft.institution}
+              onChange={(event) => set({ institution: event.target.value })}
               className={CELL}
-              {...fieldErrorProps('mf-house', detailError(errors, 'fund_house'))}
             />
-            <FieldError id="mf-house" message={detailError(errors, 'fund_house')} />
           </div>
           <div>
             <label htmlFor="mf-horizon" className={DETAIL_LABEL}>
@@ -242,7 +243,7 @@ export function MutualFundSection({
       onDelete={(id) => deleteHolding(id, familyId)}
       deleteConfirm={(row) => ({
         title: `Delete ${row.label}?`,
-        body: 'This removes the holding and its goal target. It cannot be undone.',
+        body: 'This removes the holding and every reminder logged against it. It cannot be undone.',
       })}
       addLabel="Add holding"
       emptyMessage="No mutual fund holdings recorded."

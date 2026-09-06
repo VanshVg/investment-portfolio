@@ -478,25 +478,26 @@ describe('createHolding / updateHolding / deleteHolding server actions', () => {
       memberId: null,
       managedBy: 'self',
       label: 'Same-category update probe',
-      institution: '',
+      institution: 'Parag Parikh',
       principalAmount: null,
       periodicAmount: null,
       nextDueDate: null,
       dueFrequency: 'monthly',
       remindersEnabled: true,
       category: 'mutual_fund',
-      details: { target_goal: 500_000, fund_house: 'Parag Parikh' },
+      details: { target_goal: 500_000 },
     })
 
     expect(result.ok).toBe(true)
 
     const { data: row } = await admin
       .from('holdings')
-      .select('category, details, due_frequency')
+      .select('category, institution, details, due_frequency')
       .eq('id', holding!.id)
       .single()
     expect(row?.category).toBe('mutual_fund')
-    expect(row?.details).toEqual({ target_goal: 500_000, fund_house: 'Parag Parikh' })
+    expect(row?.institution).toBe('Parag Parikh')
+    expect(row?.details).toEqual({ target_goal: 500_000 })
     expect(row?.due_frequency).toBe('monthly')
 
     await admin.from('holdings').delete().eq('id', holding!.id)

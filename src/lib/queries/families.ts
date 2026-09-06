@@ -1,10 +1,16 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/db/types.generated'
+import type { HoldingCategory } from '@/lib/validation/holdings'
+import type { DueFrequency } from '@/lib/domain/due-dates'
+
+// Re-exported rather than redeclared: HoldingCategory is derived from the Zod
+// detail schemas (keyof typeof holdingDetailSchemas) and DueFrequency from the
+// due-date arithmetic that actually uses it, so each has exactly one home and
+// cannot drift from the code that defines what the union really means.
+export type { HoldingCategory, DueFrequency }
 
 export type MemberRelation = 'self' | 'spouse' | 'son' | 'daughter' | 'father' | 'mother' | 'other'
-export type HoldingCategory = 'life_insurance' | 'general_insurance' | 'mutual_fund' | 'fixed_income'
 export type ManagedBy = 'self' | 'external'
-export type DueFrequency = 'annual' | 'half_yearly' | 'quarterly' | 'monthly' | 'one_time'
 
 export interface FamilySummary {
   id: string

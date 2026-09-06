@@ -19,7 +19,7 @@ export interface EditableSectionProps<T, D> {
   columns: Column[]
   rows: T[]
   rowKey: (row: T) => string
-  rowLabel?: (row: T) => string
+  rowLabel: (row: T) => string
   renderRead: (row: T) => React.ReactNode
   renderEdit: (
     draft: D,
@@ -209,7 +209,7 @@ export function EditableSection<T, D>({
             {rows.map((row) => {
               const id = rowKey(row)
               if (id === editingId) return null
-              const label = rowLabel ? rowLabel(row) : id
+              const label = rowLabel(row)
 
               return (
                 <tr key={id} className="border-b border-line last:border-0">

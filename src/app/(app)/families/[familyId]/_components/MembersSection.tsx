@@ -145,7 +145,7 @@ export function MembersSection({
           title: `Remove ${row.name}?`,
           body:
             count > 0
-              ? `${count} financial record(s) are linked to ${row.name}. They will be kept, but will no longer be attributed to anyone.`
+              ? `${count} financial record(s) are linked to ${row.name}. They will be kept, but will no longer be attributed to anyone. This cannot be undone.`
               : `${row.name} has no financial records linked. This cannot be undone.`,
         }
       }}

@@ -37,19 +37,22 @@ export function GeneralInsuranceSection({
   updateHolding: (id: string, familyId: string, input: unknown) => Promise<ActionResult>
   deleteHolding: (id: string, familyId: string) => Promise<ActionResult>
 }) {
+  const nameOf = (id: string | null) => members.find((m) => m.id === id)?.name ?? 'Whole family'
+
   return (
     <EditableSection<Holding, HoldingDraft>
       index={2}
       title="General insurance — health & vehicle"
       description="Health floaters cover the whole household; vehicle policies usually sit with one member."
       columns={[
-        { key: 'category', label: 'Category', width: '11%' },
-        { key: 'label', label: 'Policy', width: '22%' },
-        { key: 'asset', label: 'Insured asset', width: '19%' },
-        { key: 'coverage', label: 'Coverage', width: '14%' },
-        { key: 'premium', label: 'Premium', width: '12%' },
-        { key: 'due', label: 'Due date', width: '12%' },
-        { key: 'managed', label: 'Managed by', width: '10%' },
+        { key: 'category', label: 'Category', width: '10%' },
+        { key: 'label', label: 'Policy', width: '20%' },
+        { key: 'asset', label: 'Insured asset', width: '17%' },
+        { key: 'coverage', label: 'Coverage', width: '13%' },
+        { key: 'premium', label: 'Premium', width: '11%' },
+        { key: 'due', label: 'Due date', width: '11%' },
+        { key: 'managed', label: 'Managed by', width: '8%' },
+        { key: 'member', label: 'Member', width: '10%' },
       ]}
       rows={holdings}
       rowKey={(row) => row.id}
@@ -69,6 +72,7 @@ export function GeneralInsuranceSection({
             <td className="px-2 py-1.5">
               <ManagedByPill value={row.managedBy} />
             </td>
+            <td className="px-2 py-1.5">{nameOf(row.memberId)}</td>
           </>
         )
       }}
@@ -158,6 +162,10 @@ export function GeneralInsuranceSection({
               <option value="external">External</option>
             </select>
           </td>
+          {/* Member is set below in the details panel, where its label can
+              stay visible — this cell just keeps the column aligned with the
+              read row while editing. */}
+          <td className="px-2 py-1.5 text-ink-soft">{nameOf(draft.memberId)}</td>
         </>
       )}
       renderDetails={(draft, set, errors) => (
@@ -200,12 +208,10 @@ export function GeneralInsuranceSection({
             />
           </div>
           <div>
-            <label htmlFor="gi-member" className={DETAIL_LABEL}>
-              Member (optional)
-            </label>
             <MemberSelect
               id="gi-member"
-              label="Member"
+              label="Member (optional)"
+              hideLabel={false}
               members={members}
               value={draft.memberId}
               onChange={(memberId) => set({ memberId })}

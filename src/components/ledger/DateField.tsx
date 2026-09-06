@@ -14,14 +14,12 @@ export function DateField({
   label,
   value,
   onChange,
-  hideLabel = true,
   error,
 }: {
   id: string
   label: string
   value: string | null
   onChange: (value: string | null) => void
-  hideLabel?: boolean
   error?: string
 }) {
   const [text, setText] = useState(() => (value ? formatDMY(value) : ''))
@@ -57,7 +55,7 @@ export function DateField({
 
   return (
     <>
-      <label htmlFor={id} className={hideLabel ? 'sr-only' : 'text-[11px] text-ink-soft'}>
+      <label htmlFor={id} className="sr-only">
         {label}
       </label>
       <input

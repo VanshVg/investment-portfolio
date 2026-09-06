@@ -5,9 +5,11 @@ export type ActionResult =
   | { ok: false; formError?: string; fieldErrors?: Record<string, string> }
 
 /**
- * Check constraints the advisor can actually trigger from the UI. Mapping them
- * by constraint name keeps the message next to the rule it explains, and keeps
- * Postgres text out of the interface.
+ * Check constraints the advisor can actually trigger from the UI — all three
+ * fields below have a rendered error slot (family_members_consent_needs_mobile
+ * on the members table; the horizon/CAGR bounds on the family workspace form).
+ * Mapping them by constraint name keeps the message next to the rule it
+ * explains, and keeps Postgres text out of the interface.
  */
 const CONSTRAINT_MESSAGES: Record<string, { field: string; message: string }> = {
   family_members_consent_needs_mobile: {
@@ -26,6 +28,10 @@ const CONSTRAINT_MESSAGES: Record<string, { field: string; message: string }> = 
 
 const CODE_MESSAGES: Record<string, string> = {
   '23503': 'A linked record is missing or was already deleted. Refresh and try again.',
+  // No unique constraint beyond primary keys exists in this milestone, so this
+  // is currently unreachable from the UI. It goes live in Milestone 3, once
+  // the reminder log and payment-tick work add real uniqueness rules — kept
+  // here now rather than added under pressure later.
   '23505': 'That record already exists.',
   '42501': 'You do not have permission to make that change.',
 }
