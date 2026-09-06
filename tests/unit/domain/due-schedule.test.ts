@@ -53,4 +53,15 @@ describe('dueDatesBetween', () => {
     expect(dueDatesBetween('not-a-date', 'annual', '2026-01-01', '2027-01-01')).toEqual([])
     expect(dueDatesBetween('2026-01-01', 'annual', '2027-01-01', '2026-01-01')).toEqual([])
   })
+
+  it('finds occurrences for an anchor decades before the window', () => {
+    // A monthly SIP anchored in 1970 sits far more than 600 months before the
+    // window. Walking from the anchor exhausts any fixed iteration cap and
+    // returns nothing, which reads as "no dues" rather than as a failure.
+    expect(dueDatesBetween('1970-01-15', 'monthly', '2026-09-01', '2026-11-30')).toEqual([
+      '2026-09-15',
+      '2026-10-15',
+      '2026-11-15',
+    ])
+  })
 })
