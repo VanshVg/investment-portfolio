@@ -142,4 +142,21 @@ describe('due instances', () => {
     const { data } = await admin.from('due_instances').select('id').eq('id', instance!.id)
     expect(data).toHaveLength(1)
   })
+
+  it('defaults off_schedule to false', async () => {
+    // holdingId's holding was deleted above ('removes instances when the
+    // holding is deleted'), so this needs its own holding — the same fixture
+    // helper the anonymous-write/delete cases use above, cleaned up by the
+    // same familyIds/afterAll.
+    const holding = await newFixtureHolding('Off-schedule default fixture plan')
+    const admin = adminClient()
+    const { data, error } = await admin
+      .from('due_instances')
+      .insert({ holding_id: holding.id, due_date: '2027-03-01' })
+      .select('off_schedule')
+      .single()
+
+    expect(error).toBeNull()
+    expect(data?.off_schedule).toBe(false)
+  })
 })

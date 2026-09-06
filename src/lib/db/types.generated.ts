@@ -42,6 +42,7 @@ export type Database = {
           holding_id: string
           id: string
           note: string | null
+          off_schedule: boolean
           paid_on: string | null
           payment_status: Database["public"]["Enums"]["payment_status"]
           updated_at: string
@@ -53,6 +54,7 @@ export type Database = {
           holding_id: string
           id?: string
           note?: string | null
+          off_schedule?: boolean
           paid_on?: string | null
           payment_status?: Database["public"]["Enums"]["payment_status"]
           updated_at?: string
@@ -64,6 +66,7 @@ export type Database = {
           holding_id?: string
           id?: string
           note?: string | null
+          off_schedule?: boolean
           paid_on?: string | null
           payment_status?: Database["public"]["Enums"]["payment_status"]
           updated_at?: string
