@@ -87,15 +87,20 @@ export async function reconcileDueInstances(
     if (deleteError) {
       throw new Error(`reconcileDueInstances: deleting instances failed: ${deleteError.message}`)
     }
-    // These exact ids were just read under this same client, so anything
-    // less than all of them coming back means RLS's USING clause silently
-    // kept a row rather than deleting it — an empty (or partial) result
-    // here is a blocked write, not a no-op, and must not read as success.
+    // These exact ids were just read under this same client, so any count
+    // short of all of them is worth stopping for — but it does not, on its
+    // own, say why. Two distinct causes produce the identical symptom: RLS's
+    // USING clause silently kept a row instead of deleting it, or a second
+    // reconciliation of this same holding (the nightly job overlapping an
+    // advisor's save) already deleted the same rows a moment earlier. Either
+    // way, continuing would report a delete count that did not happen, so
+    // this throws rather than guesses which of the two occurred.
     if (!removed || removed.length !== pristineIds.length) {
       throw new Error(
-        `reconcileDueInstances: delete affected ${removed?.length ?? 0} of ` +
-          `${pristineIds.length} pristine instances for holding ${holdingId} — treating as a ` +
-          'blocked write rather than reporting success',
+        `reconcileDueInstances: delete for holding ${holdingId} returned ` +
+          `${removed?.length ?? 0} of ${pristineIds.length} requested rows — either a write ` +
+          'was blocked or a concurrent reconciliation of this holding already removed them; ' +
+          'refusing to report a count that did not happen',
       )
     }
     deleted = removed.length
@@ -111,11 +116,16 @@ export async function reconcileDueInstances(
     if (flagError) {
       throw new Error(`reconcileDueInstances: flagging instances failed: ${flagError.message}`)
     }
+    // Same reasoning as the delete above: a short count here means either a
+    // blocked write or a concurrent reconciliation of this holding got to
+    // these rows first (it may have flagged them, or deleted them if they
+    // were pristine under its own read) — not necessarily RLS.
     if (!flagged || flagged.length !== preservedIds.length) {
       throw new Error(
-        `reconcileDueInstances: flagged ${flagged?.length ?? 0} of ${preservedIds.length} ` +
-          `preserved instances for holding ${holdingId} — treating as a blocked write rather ` +
-          'than reporting success',
+        `reconcileDueInstances: off_schedule update for holding ${holdingId} returned ` +
+          `${flagged?.length ?? 0} of ${preservedIds.length} requested rows — either a write ` +
+          'was blocked or a concurrent reconciliation of this holding already changed them; ' +
+          'refusing to report a count that did not happen',
       )
     }
   }

@@ -20,6 +20,22 @@ const THROUGH = '2027-10-06'
 // A date safely in the past relative to any plausible run of this suite.
 const PAST_PRISTINE_DATE = '2025-01-01'
 
+// Computed the same way the implementation computes "today", rather than a
+// hardcoded literal, so the boundary tests below (today vs. yesterday) can't
+// drift out of alignment with the boundary they exist to pin.
+const TODAY = new Date().toISOString().slice(0, 10)
+const YESTERDAY = (() => {
+  const d = new Date()
+  d.setDate(d.getDate() - 1)
+  return d.toISOString().slice(0, 10)
+})()
+
+// Far enough beyond THROUGH that a holding rescheduled to it always has an
+// empty wanted schedule, regardless of what "today" happens to be when this
+// suite runs — the boundary tests below need the old instance to be
+// unambiguously off-schedule, not just off by coincidence of date.
+const FAR_FUTURE_ANCHOR = '2030-01-01'
+
 let familyId: string
 let scheduleHoldingId: string
 let paidHoldingId: string
@@ -27,6 +43,8 @@ let noteHoldingId: string
 let reminderHoldingId: string
 let pastHoldingId: string
 let countsHoldingId: string
+let dueTodayHoldingId: string
+let dueYesterdayHoldingId: string
 
 // Cascades away the shared fixture family, taking every holding, due
 // instance and reminder_log row created against it with it, so repeated
@@ -185,6 +203,48 @@ describe('reconcileDueInstances', () => {
     // run under test both deletes and creates.
     countsHoldingId = await newScheduledHolding('Counts plan')
     await rescheduleTo(countsHoldingId, '2026-11-01')
+
+    // Boundary: Decision 3 defines past as strictly due_date < today, so an
+    // instance due exactly today is not past and stays eligible for
+    // reconciliation, while one due yesterday is past and must never be
+    // touched. one_time keeps each holding down to the single instance the
+    // boundary is about, so no unrelated recurrence can pass or fail the
+    // assertion by coincidence.
+    const { data: dueTodayHolding, error: dueTodayError } = await admin
+      .from('holdings')
+      .insert({
+        family_id: familyId,
+        category: 'life_insurance',
+        label: 'Due today boundary plan',
+        periodic_amount: 25_000,
+        anchor_due_date: TODAY,
+        next_due_date: TODAY,
+        due_frequency: 'one_time',
+      })
+      .select()
+      .single()
+    if (dueTodayError) throw new Error(dueTodayError.message)
+    dueTodayHoldingId = dueTodayHolding!.id
+    await ensureDueInstances(admin, dueTodayHoldingId, THROUGH)
+    await rescheduleTo(dueTodayHoldingId, FAR_FUTURE_ANCHOR)
+
+    const { data: dueYesterdayHolding, error: dueYesterdayError } = await admin
+      .from('holdings')
+      .insert({
+        family_id: familyId,
+        category: 'life_insurance',
+        label: 'Due yesterday boundary plan',
+        periodic_amount: 25_000,
+        anchor_due_date: YESTERDAY,
+        next_due_date: YESTERDAY,
+        due_frequency: 'one_time',
+      })
+      .select()
+      .single()
+    if (dueYesterdayError) throw new Error(dueYesterdayError.message)
+    dueYesterdayHoldingId = dueYesterdayHolding!.id
+    await ensureDueInstances(admin, dueYesterdayHoldingId, THROUGH)
+    await rescheduleTo(dueYesterdayHoldingId, FAR_FUTURE_ANCHOR)
   })
 
   it('deletes a future pristine instance that left the schedule', async () => {
@@ -239,5 +299,18 @@ describe('reconcileDueInstances', () => {
     const result = await reconcileDueInstances(admin, countsHoldingId, THROUGH)
     expect(result.deleted).toBeGreaterThan(0)
     expect(result.created).toBeGreaterThan(0)
+  })
+
+  // These two pin the past/not-past boundary from both sides — either one
+  // alone would also pass against a boundary shifted a day in the wrong
+  // direction, since only one of the two dates would land wrong.
+  it('deletes a pristine instance due exactly today, since today is not past', async () => {
+    await reconcileDueInstances(admin, dueTodayHoldingId, THROUGH)
+    expect(await datesFor(dueTodayHoldingId)).not.toContain(TODAY)
+  })
+
+  it('never touches a pristine instance due yesterday, since yesterday is past', async () => {
+    await reconcileDueInstances(admin, dueYesterdayHoldingId, THROUGH)
+    expect(await datesFor(dueYesterdayHoldingId)).toContain(YESTERDAY)
   })
 })
