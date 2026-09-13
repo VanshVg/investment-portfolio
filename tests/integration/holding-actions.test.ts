@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { adminClient, anonClient, ensureUser, signedInClient } from '../helpers/db'
 import { applyDueDateEdit } from '@/lib/domain/due-dates'
+import { reconcileDueInstances } from '@/lib/reminders/reconcile'
 
 const EMAIL = 'holding-actions@example.test'
 const PASSWORD = 'test-password-123'
@@ -26,6 +27,17 @@ vi.mock('next/cache', () => ({
 vi.mock('@/lib/supabase/server', () => ({
   createServerSupabase: mockCreateServerSupabase,
 }))
+
+// Wraps the real reconcileDueInstances in a vi.fn whose default behaviour is
+// the actual implementation, so every existing test in this file still runs
+// real reconciliation unless a test explicitly queues a one-off failure with
+// mockImplementationOnce (see the "still reports success" test below). This
+// is deliberately not a blanket mock — most of this file needs the genuine
+// generation behaviour to be under test.
+vi.mock('@/lib/reminders/reconcile', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/reminders/reconcile')>()
+  return { ...actual, reconcileDueInstances: vi.fn(actual.reconcileDueInstances) }
+})
 
 mockCreateServerSupabase.mockImplementation(() => signedInClient(EMAIL, PASSWORD))
 
@@ -765,6 +777,59 @@ describe('due instance generation on the write path', () => {
     expect(relabelled.ok).toBe(true)
 
     expect(await instanceIdsFor(created.id)).toEqual(idsBefore)
+
+    await adminClient().from('holdings').delete().eq('id', created.id)
+  })
+
+  // The rule this task exists to protect: the holding write and the due-
+  // instance refresh are two separate statements, and the holding write is
+  // the advisor's actual data. If reconciliation fails after that write has
+  // already landed, reporting failure would claim the write did not happen
+  // when it did — so createHolding/updateHolding must still report success,
+  // and the row must genuinely be there. Stale instances are not lost: the
+  // next nightly reconciliation run repairs them the same way it repairs a
+  // missed run. If this test ever fails, the fix is almost certainly to
+  // restore the swallow in `refreshSchedule`, not to remove this test.
+  it('still reports success and still writes the holding when reconciliation throws', async () => {
+    const forcedFailure = new Error('forced failure for regression test')
+
+    vi.mocked(reconcileDueInstances).mockImplementationOnce(async () => {
+      throw forcedFailure
+    })
+    const created = await createHolding(familyId, {
+      ...baseInput,
+      label: 'Swallow-rule probe (create)',
+      nextDueDate: '2026-10-01',
+    })
+    expect(created.ok).toBe(true)
+    if (!created.ok) throw new Error('expected ok result')
+
+    // Assert the write really happened by reading the row back — a version
+    // of refreshSchedule that returned ok:true without actually writing
+    // anything would pass a check on the returned id alone.
+    const { data: createdRow } = await adminClient()
+      .from('holdings')
+      .select('id, label')
+      .eq('id', created.id)
+      .maybeSingle()
+    expect(createdRow?.label).toBe('Swallow-rule probe (create)')
+
+    vi.mocked(reconcileDueInstances).mockImplementationOnce(async () => {
+      throw forcedFailure
+    })
+    const updated = await updateHolding(created.id, familyId, {
+      ...baseInput,
+      label: 'Swallow-rule probe (updated)',
+      nextDueDate: '2026-10-01',
+    })
+    expect(updated.ok).toBe(true)
+
+    const { data: updatedRow } = await adminClient()
+      .from('holdings')
+      .select('label')
+      .eq('id', created.id)
+      .single()
+    expect(updatedRow?.label).toBe('Swallow-rule probe (updated)')
 
     await adminClient().from('holdings').delete().eq('id', created.id)
   })
