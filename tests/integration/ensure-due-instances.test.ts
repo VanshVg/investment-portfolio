@@ -15,12 +15,18 @@ const admin: SupabaseClient = adminClient()
 // the real callers use ("through" a fixed number of months out).
 const THROUGH = '2027-10-06'
 
+// Computed the same way the implementation computes "today", rather than a
+// hardcoded literal, so the "due exactly today" case below can't drift out
+// of alignment with the boundary it is testing.
+const TODAY = new Date().toISOString().slice(0, 10)
+
 let familyId: string
 let holdingId: string
 let monthlyHoldingId: string
 let refreshHoldingId: string
 let touchedHoldingId: string
 let offScheduleHoldingId: string
+let dueTodayHoldingId: string
 let undatedHoldingId: string
 
 // Cascades away the shared fixture family, taking every holding and due
@@ -42,15 +48,15 @@ async function amountFor(id: string, dueDate: string): Promise<number | null> {
   return data?.amount_due ?? null
 }
 
-async function offScheduleFor(id: string, dueDate: string): Promise<boolean> {
+async function instanceFor(id: string, dueDate: string) {
   const { data, error } = await admin
     .from('due_instances')
-    .select('off_schedule')
+    .select('amount_due, payment_status, note, off_schedule')
     .eq('holding_id', id)
     .eq('due_date', dueDate)
     .single()
   if (error) throw new Error(error.message)
-  return Boolean(data?.off_schedule)
+  return data!
 }
 
 describe('ensureDueInstances', () => {
@@ -145,6 +151,25 @@ describe('ensureDueInstances', () => {
     if (offScheduleError) throw new Error(offScheduleError.message)
     offScheduleHoldingId = offScheduleHolding!.id
 
+    const { data: dueTodayHolding, error: dueTodayError } = await admin
+      .from('holdings')
+      .insert({
+        family_id: familyId,
+        category: 'life_insurance',
+        label: 'Due today plan',
+        periodic_amount: 10_000,
+        anchor_due_date: TODAY,
+        next_due_date: TODAY,
+        // one_time: a single occurrence, so this fixture can assert an exact
+        // refreshed count without an unrelated future annual recurrence
+        // (anchor + 1 year) also matching the refresh filter.
+        due_frequency: 'one_time',
+      })
+      .select()
+      .single()
+    if (dueTodayError) throw new Error(dueTodayError.message)
+    dueTodayHoldingId = dueTodayHolding!.id
+
     const { data: undatedHolding, error: undatedError } = await admin
       .from('holdings')
       .insert({
@@ -168,6 +193,10 @@ describe('ensureDueInstances', () => {
     await ensureDueInstances(admin, holdingId, THROUGH)
     const second = await ensureDueInstances(admin, holdingId, THROUGH)
     expect(second.created).toBe(0)
+    // Rows the first run already brought in line must not be re-matched by
+    // the amount refresh or the off_schedule clear on a steady-state rerun.
+    expect(second.refreshed).toBe(0)
+    expect(second.offScheduleCleared).toBe(0)
   })
 
   it('does not invent instances before next_due_date', async () => {
@@ -216,23 +245,50 @@ describe('ensureDueInstances', () => {
     expect(await amountFor(touchedHoldingId, paidDate)).toBe(25_000)
   })
 
-  it('clears off_schedule when a date returns to the schedule', async () => {
+  it('clears off_schedule on a touched instance without moving its evidence', async () => {
+    // Mirrors how off_schedule actually gets set (Decision 3): reconciliation
+    // only preserves-and-flags a row that is NOT pristine, so the realistic
+    // case is a row that is both ticked paid AND off_schedule. Clearing the
+    // flag must not require the row to be pristine, and must not touch the
+    // payment status or note that made it evidence in the first place.
     await ensureDueInstances(admin, offScheduleHoldingId, THROUGH)
 
-    const { error: markOffScheduleError } = await admin
+    const { error: markTouchedError } = await admin
       .from('due_instances')
-      .update({ off_schedule: true })
+      .update({ payment_status: 'paid', paid_on: '2027-10-01', off_schedule: true })
       .eq('holding_id', offScheduleHoldingId)
       .eq('due_date', '2027-10-01')
-    if (markOffScheduleError) throw new Error(markOffScheduleError.message)
-    expect(await offScheduleFor(offScheduleHoldingId, '2027-10-01')).toBe(true)
+    if (markTouchedError) throw new Error(markTouchedError.message)
 
-    await ensureDueInstances(admin, offScheduleHoldingId, THROUGH)
-    expect(await offScheduleFor(offScheduleHoldingId, '2027-10-01')).toBe(false)
+    const before = await instanceFor(offScheduleHoldingId, '2027-10-01')
+    expect(before.off_schedule).toBe(true)
+    expect(before.payment_status).toBe('paid')
+
+    const result = await ensureDueInstances(admin, offScheduleHoldingId, THROUGH)
+    expect(result.offScheduleCleared).toBe(1)
+
+    const after = await instanceFor(offScheduleHoldingId, '2027-10-01')
+    expect(after.off_schedule).toBe(false)
+    expect(after.payment_status).toBe('paid') // evidence untouched
+  })
+
+  it('treats an instance due exactly today as not-past, eligible for the amount refresh', async () => {
+    await ensureDueInstances(admin, dueTodayHoldingId, THROUGH)
+    expect(await amountFor(dueTodayHoldingId, TODAY)).toBe(10_000)
+
+    const { error } = await admin
+      .from('holdings')
+      .update({ periodic_amount: 20_000 })
+      .eq('id', dueTodayHoldingId)
+    if (error) throw new Error(error.message)
+
+    const result = await ensureDueInstances(admin, dueTodayHoldingId, THROUGH)
+    expect(result.refreshed).toBe(1)
+    expect(await amountFor(dueTodayHoldingId, TODAY)).toBe(20_000)
   })
 
   it('skips a holding with no next_due_date', async () => {
     const result = await ensureDueInstances(admin, undatedHoldingId, THROUGH)
-    expect(result).toEqual({ created: 0, refreshed: 0 })
+    expect(result).toEqual({ created: 0, refreshed: 0, offScheduleCleared: 0 })
   })
 })

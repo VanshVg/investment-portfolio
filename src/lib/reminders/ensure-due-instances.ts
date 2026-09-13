@@ -5,9 +5,16 @@ import { dueDatesBetween } from '@/lib/domain/due-schedule'
 export interface EnsureResult {
   created: number
   refreshed: number
+  /**
+   * Rows whose `off_schedule` flag was cleared because their date came back
+   * onto the schedule. Reported separately from `refreshed` since the two
+   * updates are scoped by different rules (see below) and conflating their
+   * counts would hide which kind of change actually happened on a given run.
+   */
+  offScheduleCleared: number
 }
 
-const NOTHING: EnsureResult = { created: 0, refreshed: 0 }
+const NOTHING: EnsureResult = { created: 0, refreshed: 0, offScheduleCleared: 0 }
 
 /**
  * Makes the due instances for one holding match its schedule, up to `through`.
@@ -58,22 +65,57 @@ export async function ensureDueInstances(
     throw new Error(`ensureDueInstances: inserting instances failed: ${insertError.message}`)
   }
 
-  // Step 2 — bring existing rows back in line. Restricted to future, pristine
-  // rows: a past instance records what was actually owed, and one the advisor
-  // has ticked or annotated is evidence. Neither may be rewritten.
   const today = new Date().toISOString().slice(0, 10)
-  const { data: refreshed, error: updateError } = await client
+
+  // Step 2a — clear off_schedule on rows whose date is back on the schedule.
+  // Unqualified by pristine-ness or by past/future: the flag only records
+  // whether the date is currently part of the schedule, and a date the
+  // advisor has ticked or annotated can still return to the schedule (that
+  // is the whole point of preserving it instead of deleting it). Scoped to
+  // currently-true rows so a steady-state run matches nothing here and
+  // doesn't churn a row version through the updated_at trigger for no reason.
+  const { data: cleared, error: clearError } = await client
     .from('due_instances')
-    .update({ off_schedule: false, amount_due: holding.periodic_amount })
+    .update({ off_schedule: false })
     .eq('holding_id', holdingId)
     .in('due_date', dates)
-    .gt('due_date', today)
-    .eq('payment_status', 'unknown')
-    .is('note', null)
+    .eq('off_schedule', true)
     .select('id')
-  if (updateError) {
-    throw new Error(`ensureDueInstances: refreshing instances failed: ${updateError.message}`)
+  if (clearError) {
+    throw new Error(`ensureDueInstances: clearing off_schedule failed: ${clearError.message}`)
   }
 
-  return { created: inserted?.length ?? 0, refreshed: refreshed?.length ?? 0 }
+  // Step 2b — refresh amount_due on rows that are in the current schedule,
+  // not in the past (today counts as not-past), and pristine (no payment
+  // status recorded, no note): a past instance records what was actually
+  // owed, and one the advisor has ticked or annotated is evidence. Neither
+  // may be rewritten. Also scoped to rows whose amount actually differs from
+  // the holding's current periodic_amount, so a steady-state run matches
+  // nothing and `refreshed` means "changed," not "matched." periodic_amount
+  // and amount_due are both nullable, and `neq` does not match nulls, so the
+  // two directions are handled explicitly.
+  const baseRefreshQuery = client
+    .from('due_instances')
+    .update({ amount_due: holding.periodic_amount })
+    .eq('holding_id', holdingId)
+    .in('due_date', dates)
+    .gte('due_date', today)
+    .eq('payment_status', 'unknown')
+    .is('note', null)
+
+  const { data: refreshed, error: refreshError } =
+    holding.periodic_amount === null
+      ? await baseRefreshQuery.not('amount_due', 'is', null).select('id')
+      : await baseRefreshQuery
+          .or(`amount_due.is.null,amount_due.neq.${holding.periodic_amount}`)
+          .select('id')
+  if (refreshError) {
+    throw new Error(`ensureDueInstances: refreshing instances failed: ${refreshError.message}`)
+  }
+
+  return {
+    created: inserted?.length ?? 0,
+    refreshed: refreshed?.length ?? 0,
+    offScheduleCleared: cleared?.length ?? 0,
+  }
 }
