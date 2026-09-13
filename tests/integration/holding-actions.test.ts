@@ -667,3 +667,105 @@ describe('createHolding / updateHolding / deleteHolding server actions', () => {
     })
   })
 })
+
+async function datesFor(holdingId: string): Promise<string[]> {
+  const admin = adminClient()
+  const { data, error } = await admin
+    .from('due_instances')
+    .select('due_date')
+    .eq('holding_id', holdingId)
+    .order('due_date')
+  if (error) throw new Error(error.message)
+  return (data ?? []).map((row) => row.due_date)
+}
+
+async function instanceIdsFor(holdingId: string): Promise<string[]> {
+  const admin = adminClient()
+  const { data, error } = await admin
+    .from('due_instances')
+    .select('id')
+    .eq('holding_id', holdingId)
+    .order('due_date')
+  if (error) throw new Error(error.message)
+  return (data ?? []).map((row) => row.id)
+}
+
+// These exercise the save path's due-instance generation (Task 6): createHolding
+// and updateHolding must each trigger reconciliation so a holding entered in
+// front of a client shows its due dates immediately, without waiting on the
+// nightly job. Driven through the actions themselves, not through direct
+// inserts, since that wiring is exactly what these tests are checking for.
+describe('due instance generation on the write path', () => {
+  const baseInput = {
+    memberId: null,
+    managedBy: 'self' as const,
+    label: 'Generation probe',
+    institution: '',
+    principalAmount: null,
+    periodicAmount: 25_000,
+    dueFrequency: 'annual' as const,
+    remindersEnabled: true,
+    category: 'life_insurance' as const,
+    details: {},
+  }
+
+  it('creates due instances when a holding is created', async () => {
+    const result = await createHolding(familyId, { ...baseInput, nextDueDate: '2026-10-01' })
+    expect(result.ok).toBe(true)
+    if (!result.ok) throw new Error('expected ok result')
+
+    const dates = await datesFor(result.id)
+    expect(dates).toContain('2026-10-01')
+
+    await adminClient().from('holdings').delete().eq('id', result.id)
+  })
+
+  it('reconciles due instances when the due date is corrected', async () => {
+    const created = await createHolding(familyId, {
+      ...baseInput,
+      label: 'Reconcile-on-update probe',
+      dueFrequency: 'one_time',
+      nextDueDate: '2026-10-01',
+    })
+    expect(created.ok).toBe(true)
+    if (!created.ok) throw new Error('expected ok result')
+
+    const updated = await updateHolding(created.id, familyId, {
+      ...baseInput,
+      label: 'Reconcile-on-update probe',
+      dueFrequency: 'one_time',
+      nextDueDate: '2026-11-01',
+    })
+    expect(updated.ok).toBe(true)
+
+    const dates = await datesFor(created.id)
+    expect(dates).toContain('2026-11-01')
+    expect(dates).not.toContain('2026-10-01')
+
+    await adminClient().from('holdings').delete().eq('id', created.id)
+  })
+
+  it('does not regenerate when a non-schedule field changes', async () => {
+    const created = await createHolding(familyId, {
+      ...baseInput,
+      label: 'Stable schedule probe',
+      nextDueDate: '2026-10-01',
+    })
+    expect(created.ok).toBe(true)
+    if (!created.ok) throw new Error('expected ok result')
+
+    const idsBefore = await instanceIdsFor(created.id)
+    expect(idsBefore.length).toBeGreaterThan(0)
+
+    const relabelled = await updateHolding(created.id, familyId, {
+      ...baseInput,
+      label: 'Stable schedule probe (renamed)',
+      nextDueDate: '2026-10-01', // unchanged: not a schedule edit
+    })
+    expect(relabelled.ok).toBe(true)
+
+    expect(await instanceIdsFor(created.id)).toEqual(idsBefore)
+
+    await adminClient().from('holdings').delete().eq('id', created.id)
+  })
+})
