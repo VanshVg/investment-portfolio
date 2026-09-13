@@ -64,4 +64,15 @@ describe('dueDatesBetween', () => {
       '2026-11-15',
     ])
   })
+
+  it('fully enumerates a wide monthly window instead of truncating it', () => {
+    // Anchor sits at the start of the window itself, six years before the end
+    // of it. A monthly cadence over that span has 73 legitimate occurrences
+    // (n = 0..72) -- comfortably past a walk cap sized for "a handful of
+    // months," which is exactly the failure this guards against.
+    const dates = dueDatesBetween('2020-01-15', 'monthly', '2020-01-15', '2026-01-15')
+    expect(dates).toHaveLength(73)
+    expect(dates[0]).toBe('2020-01-15')
+    expect(dates[dates.length - 1]).toBe('2026-01-15')
+  })
 })
