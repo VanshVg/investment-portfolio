@@ -253,8 +253,16 @@ takes the same path; there is nothing to reconcile, so it reduces to
 immediately.
 
 **Daily.** Vercel Cron → `/api/cron/reminders` → verify secret → for every
-holding, `ensureDueInstances` → `runReminderSweep` → return counts. Both halves
-are idempotent, so a retried or duplicated invocation changes nothing.
+holding, `reconcileDueInstances` → `runReminderSweep` → return counts. Both
+halves are idempotent, so a retried or duplicated invocation changes nothing.
+
+The daily job runs **reconciliation**, not bare generation. `ensureDueInstances`
+only adds and refreshes; it never removes an instance whose date has left the
+schedule. If the job ran only that, a save whose reconciliation failed would
+leave stale dates on the renewals page until someone happened to edit that
+holding again — which may be never. Since reconciliation calls generation
+itself, using it here costs one extra read per holding and is what makes the
+self-healing claim below actually true rather than merely stated.
 
 **Mark renewed.** One server action: set the instance to `paid` with `paid_on =
 today`, advance the holding's `next_due_date` one period, then

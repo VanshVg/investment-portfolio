@@ -1114,7 +1114,7 @@ git commit -m "feat: queue reminders that have come due"
 - Test: `tests/integration/cron-reminders.test.ts`
 
 **Interfaces:**
-- Consumes: `runReminderSweep` (Task 8), `ensureDueInstances` (Task 4), `horizonFrom` (Task 3), `createAdminSupabase` from `src/lib/supabase/admin.ts`
+- Consumes: `runReminderSweep` (Task 8), `reconcileDueInstances` (Task 5), `horizonFrom` (Task 3), `createAdminSupabase` from `src/lib/supabase/admin.ts`
 
 This handler runs with the **service-role client, which bypasses RLS entirely**. It is the only route in the application that does. Two consequences the tests must pin down: it rejects an unauthenticated request before doing any work, and it never returns data — only counts.
 
@@ -1141,7 +1141,7 @@ it('returns counts and no client data', async () => {
   const response = await GET(requestWith(process.env.CRON_SECRET!))
   const body = await response.json()
   expect(response.status).toBe(200)
-  expect(Object.keys(body).sort()).toEqual(['generated', 'sweep'])
+  expect(Object.keys(body).sort()).toEqual(['generated', 'removed', 'sweep'])
   expect(JSON.stringify(body)).not.toMatch(/\+91|@/) // no mobiles, no emails
 })
 ```
@@ -1157,7 +1157,7 @@ Expected: FAIL — module not found.
 import 'server-only'
 import { timingSafeEqual } from 'node:crypto'
 import { createAdminSupabase } from '@/lib/supabase/admin'
-import { ensureDueInstances } from '@/lib/reminders/ensure-due-instances'
+import { reconcileDueInstances } from '@/lib/reminders/reconcile'
 import { horizonFrom } from '@/lib/reminders/horizon'
 import { runReminderSweep } from '@/lib/reminders/sweep'
 import { toISODate } from '@/lib/domain/dates'
@@ -1195,10 +1195,18 @@ export async function GET(request: Request): Promise<Response> {
   }
 
   let generated = 0
+  let removed = 0
   for (const holding of holdings ?? []) {
     try {
-      const { created } = await ensureDueInstances(supabase, holding.id, through)
+      // Reconciliation, not bare generation. ensureDueInstances only adds and
+      // refreshes; it never removes an instance whose date has left the
+      // schedule. If the nightly job ran only that, a save whose reconciliation
+      // failed would leave stale dates on the renewals page until someone
+      // happened to edit that holding again — possibly never. Reconciliation
+      // calls generation itself, so this costs one extra read per holding.
+      const { created, deleted } = await reconcileDueInstances(supabase, holding.id, through)
       generated += created
+      removed += deleted
     } catch (cause) {
       console.error(`due-instance generation failed for holding ${holding.id}`, cause)
     }
@@ -1208,7 +1216,7 @@ export async function GET(request: Request): Promise<Response> {
 
   // Counts only. This response must never carry client data: the caller is a
   // scheduler, and the client that produced these numbers ignores RLS.
-  return Response.json({ generated, sweep })
+  return Response.json({ generated, removed, sweep })
 }
 ```
 
@@ -1823,7 +1831,7 @@ git commit -m "test: cover the renewal listing journeys end to end"
 
 **Spec coverage.** Every section of the spec maps to a task: due-instance generation → Tasks 1, 3, 4; reconciliation → Task 5; the sweep → Tasks 7, 8; the cron entry point → Task 9; mark-as-renewed → Task 13; the listing page → Tasks 10, 11; the payment tick → Task 12; rule configuration → Task 14; the `off_schedule` column and reminder-log index → Task 2. The folded-in follow-ups are covered: T1 (pagination) by Task 10, T5 (the `23505` mapping) becomes reachable through Tasks 4 and 8, both of which write against unique constraints.
 
-**Type consistency.** `ensureDueInstances` returns `{ created, refreshed }` in Tasks 4, 5 and 9. `reconcileDueInstances` returns `{ deleted, preserved, created, refreshed }` in Tasks 5 and 6. `runReminderSweep` returns `{ scanned, queued, skipped, failed }` in Tasks 8 and 9. `dueDatesBetween(anchor, frequency, from, through)` keeps four arguments in Tasks 1, 4 and 5. `RenewalRow` gains `offSchedule`, `firedWindows` and `dueFrequency` in Task 10, all three consumed in Tasks 11 and 13 — Task 13 flags `dueFrequency` explicitly because it is the one added out of order.
+**Type consistency.** `ensureDueInstances` returns `{ created, refreshed, offScheduleCleared }` in Tasks 4 and 5; Task 9 calls `reconcileDueInstances` instead, so the nightly job repairs stale instances rather than only adding missing ones. `reconcileDueInstances` returns `{ deleted, preserved, created, refreshed }` in Tasks 5 and 6. `runReminderSweep` returns `{ scanned, queued, skipped, failed }` in Tasks 8 and 9. `dueDatesBetween(anchor, frequency, from, through)` keeps four arguments in Tasks 1, 4 and 5. `RenewalRow` gains `offSchedule`, `firedWindows` and `dueFrequency` in Task 10, all three consumed in Tasks 11 and 13 — Task 13 flags `dueFrequency` explicitly because it is the one added out of order.
 
 **Known gap, deliberately left to the implementer.** Task 8's advisor-mobile join (`profiles:owner_advisor_id ( mobile )`) depends on PostgREST resolving a relationship it may not expose by that name. The fallback is specified in the task rather than pretended away.
 
