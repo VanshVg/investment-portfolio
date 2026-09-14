@@ -340,6 +340,24 @@ The four category defaults: `days_before` edited as chips ("30, 15") with an
 active toggle. Validation matches the existing check constraints — at least one
 window, none negative.
 
+**The advisor's own mobile number, on the same page.** `reminderRecipients`
+routes every reminder to the advisor — for a holding managed here it notifies
+both parties, and for an externally managed one it notifies the advisor alone,
+deliberately, as the cross-sell trigger. That number comes from
+`profiles.mobile` of the family's `owner_advisor_id`.
+
+Nothing in the application writes `profiles` at all, and every profile row
+currently has a null mobile. Without this field the engine ships inert: an
+externally managed holding produces **no recipients whatsoever**, so nothing is
+queued and the cross-sell reminders — the business reason the routing rule
+exists — never fire. A self-managed holding would reach the client but never
+the advisor.
+
+It is one field, one action, and it reuses the `indianMobile` validation the
+member form already uses. `profiles` already grants `update (full_name, mobile)`
+to authenticated users, deliberately excluding `role`, so no schema change is
+needed.
+
 ## Deliberate omissions
 
 - **Per-holding reminder overrides have no UI.** The schema supports them and

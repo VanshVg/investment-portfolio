@@ -1720,9 +1720,17 @@ git commit -m "feat: mark a policy renewed and roll it to the next due date"
 - Test: `tests/unit/validation/reminders.test.ts`, `tests/integration/reminder-rule-actions.test.ts`
 
 **Interfaces:**
-- Produces: `reminderRuleInput` (Zod), `updateReminderRule(id: string, input: unknown): Promise<ActionResult>`
+- Produces: `reminderRuleInput` (Zod), `updateReminderRule(id: string, input: unknown): Promise<ActionResult>`, `updateAdvisorMobile(input: unknown): Promise<ActionResult>`
 
 The four category defaults, editable. Per-holding overrides are deliberately not exposed — the engine honours them, but nothing in the UI creates one. Do not add that; it is a recorded scope decision, not an oversight.
+
+**This page must also carry the advisor's own mobile number.** `reminderRecipients` routes every reminder to the advisor — both parties for a holding managed here, the advisor alone for an externally managed one, deliberately, as the cross-sell trigger. That number is read from `profiles.mobile` of the family's `owner_advisor_id`.
+
+Nothing in the application writes `profiles`, and every row currently has a null mobile. Without this field the whole engine ships inert: an externally managed holding yields **no recipients at all**, so nothing is ever queued for it. Verify that for yourself against `src/lib/domain/routing.ts` before you build it — the behaviour is the reason the field exists.
+
+Reuse the `indianMobile` validation already used by the member form (`src/lib/validation/contact.ts`). `profiles` already grants `update (full_name, mobile)` to authenticated users while deliberately withholding `role`, so no migration is needed. Write only the current user's own row — `.eq('id', user.id)` from the session, never an id supplied by the caller.
+
+Add a test asserting that a saved mobile is read back, and one asserting the action cannot write another user's row.
 
 - [ ] **Step 1: Write the failing validation tests**
 
