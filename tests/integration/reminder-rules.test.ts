@@ -116,11 +116,62 @@ describe('reminder rule resolution', () => {
     )
   })
 
-  it('reports the widest window across every active rule', async () => {
-    const rules = await loadReminderRules(admin)
-    // The four seeded category defaults are each {30,15}; this holding's own
-    // rule is inactive by this point, and even active it was {7} — smaller
-    // either way. 30 is the true widest window across everything active.
-    expect(maxWindow(rules)).toBe(30)
+  // maxWindow is a pure function of the RuleSet it's given, so the exact
+  // cases live here, against hand-built RuleSets, rather than against
+  // loadReminderRules's live output. The live table is shared, concurrently
+  // mutable state: other integration suites (reminders.test.ts, at least)
+  // insert their own active holding-scoped rules and leave them in place
+  // until their own afterAll runs several tests later, and vitest runs test
+  // files concurrently across workers against the same database. An
+  // equality assertion against the live value is therefore a race — it
+  // would fail whenever another suite's wider rule happens to be active
+  // mid-run, for a reason that has nothing to do with maxWindow itself.
+  describe('maxWindow', () => {
+    it('reports the widest window among category rules', () => {
+      const rules: RuleSet = {
+        byCategory: new Map([
+          ['life_insurance', [30, 15]],
+          ['mutual_fund', [7]],
+        ]),
+        byHolding: new Map(),
+      }
+      expect(maxWindow(rules)).toBe(30)
+    })
+
+    it('counts a holding override wider than every category default', () => {
+      const rules: RuleSet = {
+        byCategory: new Map([['life_insurance', [30, 15]]]),
+        byHolding: new Map([['holding-1', [45, 20, 7]]]),
+      }
+      expect(maxWindow(rules)).toBe(45)
+    })
+
+    it('still reports the category default when a holding override is narrower', () => {
+      const rules: RuleSet = {
+        byCategory: new Map([['life_insurance', [30, 15]]]),
+        byHolding: new Map([['holding-1', [7]]]),
+      }
+      expect(maxWindow(rules)).toBe(30)
+    })
+
+    // A sweep bounding its scan by 0 would treat every instance, at any
+    // distance, as too far out to have fired — the empty rule set means no
+    // window is configured anywhere, so nothing can ever be due for a
+    // reminder, and a scan bound of 0 correctly matches that: there is
+    // nothing for the sweep to find, so there is nothing for it to scan.
+    it('returns 0 when there are no active rules at all', () => {
+      const rules: RuleSet = { byCategory: new Map(), byHolding: new Map() }
+      expect(maxWindow(rules)).toBe(0)
+    })
+
+    it('is at least as wide as the live seeded category defaults', async () => {
+      // A lower bound, not an equality: the seeded defaults are each
+      // {30,15}, so the true live value is always >= 30, regardless of
+      // whatever wider holding-scoped rules another suite may have active
+      // concurrently. This still proves loadReminderRules is really reading
+      // the live, seeded table, without coupling to what else is running.
+      const rules = await loadReminderRules(admin)
+      expect(maxWindow(rules)).toBeGreaterThanOrEqual(30)
+    })
   })
 })
