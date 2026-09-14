@@ -4,7 +4,7 @@ import { addDays } from 'date-fns'
 import { fromISODate, toISODate } from '@/lib/domain/dates'
 import { firedWindows } from '@/lib/domain/reminder-windows'
 import { reminderRecipients } from '@/lib/domain/routing'
-import { loadReminderRules, maxWindow, windowsFor } from './rules'
+import { loadReminderRules, maxWindow, windowsFor, type RuleSet } from './rules'
 import type { HoldingCategory } from '@/lib/validation/holdings'
 
 export interface SweepResult {
@@ -12,6 +12,21 @@ export interface SweepResult {
   queued: number
   skipped: number
   failed: number
+}
+
+/**
+ * Whether at least one active rule exists anywhere — a category default or a
+ * holding override. `maxWindow`'s own 0 is ambiguous by design (it is a
+ * width, not a presence flag): it means either "no active rule exists at
+ * all" or "every active rule is legitimately {0}", which the schema allows —
+ * `reminder_rules_days_before_non_negative` permits 0, meaning "remind on
+ * the due date itself". Those two situations must not behave the same way:
+ * the first has nothing to scan for, ever; the second still has today's due
+ * instances to find. Exported so the distinction can be pinned directly,
+ * without depending on live table state to exercise it.
+ */
+export function hasActiveRules(rules: RuleSet): boolean {
+  return rules.byCategory.size > 0 || rules.byHolding.size > 0
 }
 
 /**
@@ -34,9 +49,14 @@ export async function runReminderSweep(
   if (!todayDate) throw new Error(`runReminderSweep: expected yyyy-mm-dd, received "${today}"`)
 
   const rules = await loadReminderRules(client)
-  const widest = maxWindow(rules)
-  if (widest === 0) return { scanned: 0, queued: 0, skipped: 0, failed: 0 }
+  // Short-circuit only when there is truly nothing configured — not when the
+  // widest configured window happens to be 0. A widest of 0 with rules
+  // present means every active rule is a same-day reminder, and today's due
+  // instances still need to be scanned; addDays(today, 0) below already
+  // does the right thing for that case (a horizon of exactly today).
+  if (!hasActiveRules(rules)) return { scanned: 0, queued: 0, skipped: 0, failed: 0 }
 
+  const widest = maxWindow(rules)
   const horizon = toISODate(addDays(todayDate, widest))
 
   // The nested embed (due_instances -> holdings -> families -> profiles via

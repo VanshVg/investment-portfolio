@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { adminClient, ensureUser } from '../helpers/db'
-import { runReminderSweep } from '@/lib/reminders/sweep'
+import { hasActiveRules, runReminderSweep } from '@/lib/reminders/sweep'
+import { maxWindow, type RuleSet } from '@/lib/reminders/rules'
 import type { SupabaseClient } from '@supabase/supabase-js'
 
 const ADVISOR_EMAIL = 'sweep-admin@example.test'
@@ -22,14 +23,6 @@ const admin: SupabaseClient = adminClient()
 const TODAY = '2026-01-01'
 const DUE = '2026-01-31'
 
-// The catch-up scenario needs its own pair of dates: day one lands exactly on
-// the 30-day window, day two is one day later so only the 30-day window is
-// still eligible (29 days remaining satisfies <=30 but not <=15) — proving
-// catch-up without also proving something about the 15-day window.
-const CATCHUP_DAY_ONE = '2026-09-06'
-const CATCHUP_DAY_TWO = '2026-09-07'
-const CATCHUP_DUE = '2026-10-06'
-
 let advisorId: string
 let unreachableAdvisorId: string
 
@@ -38,11 +31,9 @@ let dueExternalId: string
 let dueNoConsentId: string
 let dueDisabledId: string
 let dueUnreachableId: string
-let dueCatchupId: string
 
 const CONSENTING_MOBILE = '+919876500001'
 const EXTERNAL_MEMBER_MOBILE = '+919876500003'
-const CATCHUP_MEMBER_MOBILE = '+919876500005'
 
 // Every family this suite creates, so afterAll can cascade all of them away
 // (holdings, due instances and reminder_log rows go with them) in one go.
@@ -109,6 +100,14 @@ async function insertDueInstance(holdingId: string, dueDate: string) {
     .single()
   if (error) throw new Error(error.message)
   return data!.id
+}
+
+/** An active per-holding override. Cascades away with its holding, not tracked separately. */
+async function insertHoldingRule(holdingId: string, daysBefore: number[]) {
+  const { error } = await admin
+    .from('reminder_rules')
+    .insert({ holding_id: holdingId, days_before: daysBefore })
+  if (error) throw new Error(error.message)
 }
 
 // Cascades away every family this suite created. Must not mask a real
@@ -236,24 +235,10 @@ describe('runReminderSweep', () => {
     })
     dueUnreachableId = await insertDueInstance(unreachableHoldingId, DUE)
 
-    // Family C: a dedicated holding for the catch-up / idempotency scenarios,
-    // isolated from the routing fixtures above so those tests' repeated
-    // sweep runs at different "today" values can't interact with them.
-    const familyC = await insertFamily('Sweep fixture — catch-up', advisorId)
-    const catchupMember = await insertMember(
-      familyC,
-      'Catch-up client',
-      CATCHUP_MEMBER_MOBILE,
-      true,
-    )
-    const catchupHoldingId = await insertHolding({
-      familyId: familyC,
-      memberId: catchupMember,
-      managedBy: 'self',
-      label: 'Catch-up plan',
-      remindersEnabled: true,
-    })
-    dueCatchupId = await insertDueInstance(catchupHoldingId, CATCHUP_DUE)
+    // The catch-up, no-requeue, idempotency and zero-window scenarios below
+    // each build their own dedicated family/holding/due-instance inline,
+    // rather than sharing one here — each needs a different "today" and a
+    // fixture that isn't left over from a sibling test's run.
   })
 
   it('queues a reminder to advisor and client for a self-managed holding', async () => {
@@ -307,18 +292,149 @@ describe('runReminderSweep', () => {
     expect(rows).toHaveLength(0)
   })
 
-  it('catches up a missed day without double-queueing', async () => {
-    await runReminderSweep(admin, CATCHUP_DAY_ONE) // 30-day window fires
-    await runReminderSweep(admin, CATCHUP_DAY_TWO) // both 30 and 15 evaluated again
+  it('catches up a reminder window whose activation day was never swept', async () => {
+    // The first sweep call here does not land on the 30-day window's
+    // activation day (that would be 30 days before the due date) — it lands
+    // ten days after it, at 20 days remaining, as if every run in between
+    // had been missed. A window that only fired on its exact activation day
+    // would lose this reminder entirely; firedWindows keeps it firing until
+    // the due date passes, which is the property this test actually pins.
+    const family = await insertFamily('Sweep fixture — catch-up', advisorId)
+    const member = await insertMember(family, 'Catch-up client', '+919876500005', true)
+    const holdingId = await insertHolding({
+      familyId: family,
+      memberId: member,
+      managedBy: 'self',
+      label: 'Missed-activation-day plan',
+      remindersEnabled: true,
+    })
+    const FIRST_SWEEP_DAY = '2026-03-01'
+    const DUE_DATE = '2026-03-21' // 20 days out on the first (and only) sweep call
+    const dueInstanceId = await insertDueInstance(holdingId, DUE_DATE)
 
-    const rows = await logRowsFor(dueCatchupId)
-    expect(rows.filter((r) => r.days_before === 30)).toHaveLength(2) // advisor + client, once each
+    await runReminderSweep(admin, FIRST_SWEEP_DAY)
+
+    const rows = await logRowsFor(dueInstanceId)
+    expect(rows.filter((r) => r.days_before === 30)).toHaveLength(2) // advisor + client
     expect(rows.map((r) => r.recipient_type).sort()).toEqual(['advisor', 'client'])
   })
 
+  it('does not re-queue a window already logged when swept again on a later day', async () => {
+    // Self-contained: its own fixture, its own two sweep calls, so this
+    // assertion does not depend on rows a previous test happened to leave
+    // behind. Day one fires the 30-day window (25 days remaining); day two
+    // is a week later, still short of the 15-day window (18 days remaining),
+    // so no new window is introduced — any growth in the day-30 rows here
+    // can only be a duplicate.
+    const family = await insertFamily('Sweep fixture — no requeue on a later day', advisorId)
+    const member = await insertMember(family, 'No-requeue client', '+919876500006', true)
+    const holdingId = await insertHolding({
+      familyId: family,
+      memberId: member,
+      managedBy: 'self',
+      label: 'No-requeue plan',
+      remindersEnabled: true,
+    })
+    const DAY_ONE = '2026-04-01'
+    const DAY_TWO = '2026-04-08' // one week later
+    const DUE_DATE = '2026-04-26' // 25 days out on day one, 18 on day two
+    const dueInstanceId = await insertDueInstance(holdingId, DUE_DATE)
+
+    await runReminderSweep(admin, DAY_ONE)
+    const afterDayOne = await logRowsFor(dueInstanceId)
+    expect(afterDayOne.filter((r) => r.days_before === 30)).toHaveLength(2)
+
+    await runReminderSweep(admin, DAY_TWO)
+    const afterDayTwo = await logRowsFor(dueInstanceId)
+    expect(afterDayTwo.filter((r) => r.days_before === 30)).toHaveLength(2)
+  })
+
   it('is idempotent across repeated runs on the same day', async () => {
-    const before = await logRowsFor(dueCatchupId)
-    await runReminderSweep(admin, CATCHUP_DAY_ONE)
-    expect(await logRowsFor(dueCatchupId)).toHaveLength(before.length)
+    // Its own fixture too: the baseline it compares against must come from
+    // this test's own first run, not from whatever a sibling test left in
+    // the log.
+    const family = await insertFamily('Sweep fixture — same-day idempotency', advisorId)
+    const member = await insertMember(family, 'Idempotency client', '+919876500007', true)
+    const holdingId = await insertHolding({
+      familyId: family,
+      memberId: member,
+      managedBy: 'self',
+      label: 'Idempotency plan',
+      remindersEnabled: true,
+    })
+    const DAY = '2026-05-01'
+    const DUE_DATE = '2026-05-31' // 30 days out
+    const dueInstanceId = await insertDueInstance(holdingId, DUE_DATE)
+
+    await runReminderSweep(admin, DAY)
+    const before = await logRowsFor(dueInstanceId)
+    expect(before.length).toBeGreaterThan(0)
+
+    await runReminderSweep(admin, DAY)
+    expect(await logRowsFor(dueInstanceId)).toHaveLength(before.length)
+  })
+
+  it('queues a day-of reminder for a holding whose only rule is {0}', async () => {
+    // reminder_rules_days_before_non_negative allows 0 ("remind on the due
+    // date itself"), and a per-holding override of {0} replaces the
+    // category default outright (windowsFor prefers byHolding over
+    // byCategory). Note this cannot, on its own, distinguish the fixed sweep
+    // from the one it replaced: the seeded life_insurance/general_insurance/
+    // mutual_fund/fixed_income category defaults are permanently active at
+    // {30,15} and must not be touched by any test, so the table's true
+    // global maxWindow is always >= 30 here regardless of this holding's own
+    // rule — the old widest === 0 short-circuit was therefore never reached
+    // by this fixture either, before or after the fix. What this test does
+    // pin is that the {0} pipeline itself — windowsFor preferring the
+    // override, firedWindows firing a 0-day window on the due date, routing,
+    // and the insert — works end to end. The hasActiveRules describe block
+    // below pins the actual short-circuit regression directly.
+    const family = await insertFamily('Sweep fixture — zero-day window', advisorId)
+    const member = await insertMember(family, 'Zero-day client', '+919876500008', true)
+    const holdingId = await insertHolding({
+      familyId: family,
+      memberId: member,
+      managedBy: 'self',
+      label: 'Day-of reminder plan',
+      remindersEnabled: true,
+    })
+    await insertHoldingRule(holdingId, [0])
+
+    const ZERO_DAY = '2026-06-01'
+    const dueInstanceId = await insertDueInstance(holdingId, ZERO_DAY) // due today
+
+    await runReminderSweep(admin, ZERO_DAY)
+
+    const rows = await logRowsFor(dueInstanceId)
+    expect(rows.map((r) => r.recipient_type).sort()).toEqual(['advisor', 'client'])
+    expect(rows.every((r) => r.days_before === 0)).toBe(true)
+  })
+})
+
+describe('hasActiveRules', () => {
+  // maxWindow's 0 is ambiguous by construction: it is a width, not a
+  // presence flag, and cannot tell "no rule exists" apart from "every active
+  // rule is legitimately {0}". The sweep used to treat both the same way —
+  // short-circuiting before touching the database — which silently stops
+  // every day-of reminder the moment a category (or holding) is configured
+  // with nothing but {0}. This is a pure-function pin of the distinction the
+  // fix actually depends on: it fails to compile against the pre-fix
+  // sweep.ts (hasActiveRules did not exist), and cannot be satisfied by
+  // reading the live table either, since the seeded category defaults keep
+  // the real global maxWindow at >= 30 regardless of what this suite adds —
+  // see the note on the {0}-holding integration test above.
+  it('is false when no active rule exists anywhere', () => {
+    const empty: RuleSet = { byCategory: new Map(), byHolding: new Map() }
+    expect(hasActiveRules(empty)).toBe(false)
+    expect(maxWindow(empty)).toBe(0)
+  })
+
+  it('is true when every active rule is legitimately {0}, despite maxWindow also reporting 0', () => {
+    const zeroOnly: RuleSet = {
+      byCategory: new Map([['life_insurance', [0]]]),
+      byHolding: new Map([['some-holding-id', [0]]]),
+    }
+    expect(hasActiveRules(zeroOnly)).toBe(true)
+    expect(maxWindow(zeroOnly)).toBe(0) // the same value as the empty case above
   })
 })
