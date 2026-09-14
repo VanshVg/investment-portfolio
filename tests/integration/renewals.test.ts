@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { adminClient, signedInClient } from '../helpers/db'
 import { listRenewals } from '@/lib/queries/renewals'
@@ -158,20 +159,31 @@ describe('renewal listing', () => {
     const fixtureFamilyIds: string[] = []
 
     let fixtureFamilyId: string
-    // Three of these four share a due date, against a page size of two:
-    // ties on a due date are the normal case (a household with several
-    // policies renewing the same week), not an edge case, and a missing
-    // (due_date, id) tiebreak is exactly what lets a row land on two pages,
-    // or none. A tie of only two rows at pageSize 2 can never actually
-    // expose that: ordering by due_date alone already puts the whole tied
-    // pair ahead of every later date, so the pair always lands together on
-    // page 1 and the boundary never cuts through it — a missing tiebreak
-    // would be structurally unobservable. Tying three against a page size
-    // of two forces the boundary through the tie group instead: page 1 can
-    // only hold two of the three, so the third is pushed onto page 2
-    // alongside the next date, and which two land on page 1 is exactly what
-    // the (due_date, id) order — not just due_date — has to answer.
-    let pagInstanceIds: string[] = []
+    // Three rows share a due date, against a page size of two: ties on a due
+    // date are the normal case (a household with several policies renewing
+    // the same week), not an edge case, and a missing (due_date, id)
+    // tiebreak is exactly what lets a row land on two pages, or none. A tie
+    // of only two rows at pageSize 2 can never actually expose that:
+    // ordering by due_date alone already puts the whole tied pair ahead of
+    // every later date, so the pair always lands together on page 1 and the
+    // boundary never cuts through it. Tying three against a page size of
+    // two forces the boundary through the tie group instead — but that
+    // alone still isn't enough to prove the tiebreak is being *applied*:
+    // with no writes between the two page queries, Postgres tends to return
+    // the same physical row order on both calls regardless of whether
+    // `.order('id', ...)` is even present, so an unspecified secondary order
+    // can accidentally come out looking identical to the tiebroken one.
+    // Assigning the three tied rows' ids explicitly, in the exact reverse of
+    // their sort order, closes that: the table's physical (insertion) order
+    // is then the deliberate opposite of ascending-id order, so the two
+    // orders can only coincide if the tiebreak is genuinely being applied.
+    let lowestTiedId: string
+    let middleTiedId: string
+    let highestTiedId: string
+    let laterDateInstanceId: string
+    // Alias for lowestTiedId — the row the dueFrequency/on-schedule checks
+    // below reference by role ("the monthly one"), not by sort position.
+    let monthlyInstanceId: string
     let firedInstanceId: string
     let offScheduleInstanceId: string
 
@@ -223,12 +235,22 @@ describe('renewal listing', () => {
       const pagHoldingB = await insertFixtureHolding('Pagination fixture B', 'annual')
       const pagHoldingC = await insertFixtureHolding('Pagination fixture C', 'annual')
       const pagHoldingD = await insertFixtureHolding('Pagination fixture D', 'annual')
-      pagInstanceIds = [
-        await insertFixtureInstance(pagHoldingA, '2029-03-10'),
-        await insertFixtureInstance(pagHoldingB, '2029-03-10'),
-        await insertFixtureInstance(pagHoldingC, '2029-03-10'),
-        await insertFixtureInstance(pagHoldingD, '2029-03-11'),
-      ]
+
+      const tiedIds = [randomUUID(), randomUUID(), randomUUID()].sort()
+      lowestTiedId = tiedIds[0]
+      middleTiedId = tiedIds[1]
+      highestTiedId = tiedIds[2]
+      monthlyInstanceId = lowestTiedId
+
+      // due_instances has a unique (holding_id, due_date) constraint, so
+      // three rows tied on the same date must sit on three different
+      // holdings — which holding each row belongs to is incidental; the
+      // insertion order below (highest id first, lowest last — the exact
+      // reverse of sorted order) is what this test actually depends on.
+      await insertFixtureInstance(pagHoldingC, '2029-03-10', { id: highestTiedId })
+      await insertFixtureInstance(pagHoldingB, '2029-03-10', { id: middleTiedId })
+      await insertFixtureInstance(pagHoldingA, '2029-03-10', { id: lowestTiedId })
+      laterDateInstanceId = await insertFixtureInstance(pagHoldingD, '2029-03-11')
 
       // One instance reminded at two windows, each to both recipients — the
       // shape a real send produces — so firedWindows can be pinned to report
@@ -318,23 +340,17 @@ describe('renewal listing', () => {
         pageSize: 2,
       })
 
-      expect(page1.rows).toHaveLength(2)
-      expect(page2.rows).toHaveLength(2)
+      // Exact order, not just membership: this is what actually proves the
+      // tiebreak is `id` specifically. The three tied rows were inserted in
+      // the exact reverse of ascending-id order (see fixture setup above),
+      // so this can only come back as [lowest, middle] / [highest, later]
+      // if `.order('id', ...)` is genuinely being applied — insertion
+      // (physical) order alone would produce the opposite split.
+      expect(page1.rows.map((r) => r.dueInstanceId)).toEqual([lowestTiedId, middleTiedId])
+      expect(page2.rows.map((r) => r.dueInstanceId)).toEqual([highestTiedId, laterDateInstanceId])
 
-      const combined = [...page1.rows, ...page2.rows]
-      const ids = combined.map((r) => r.dueInstanceId)
-      // Stronger than "no duplicate": the two pages together must be exactly
-      // the four fixture rows, no more and no fewer — a row silently dropped
-      // between pages would pass a bare "no duplicate" check.
-      expect(new Set(ids)).toEqual(new Set(pagInstanceIds))
-
-      const dates = combined.map((r) => r.dueDate)
-      // Three tied rows occupy positions 0-2 (two on page 1, one pushed onto
-      // page 2 — see the fixture comment above for why that split is what
-      // actually exercises the tiebreak), and the fourth, later date is
-      // forced into the last position.
-      expect(dates.slice(0, 3).sort()).toEqual(['2029-03-10', '2029-03-10', '2029-03-10'])
-      expect(dates[3]).toBe('2029-03-11')
+      expect(page1.rows.map((r) => r.dueDate)).toEqual(['2029-03-10', '2029-03-10'])
+      expect(page2.rows.map((r) => r.dueDate)).toEqual(['2029-03-10', '2029-03-11'])
     })
 
     it('returns an empty page past the end of the result set, with total unchanged', async () => {
@@ -381,7 +397,7 @@ describe('renewal listing', () => {
     })
 
     it('carries dueFrequency, so a one_time holding can be told apart from a recurring one', async () => {
-      const recurring = await rowFor(pagInstanceIds[0])
+      const recurring = await rowFor(monthlyInstanceId)
       expect(recurring.dueFrequency).toBe('monthly')
 
       const oneTime = await rowFor(firedInstanceId)
@@ -399,7 +415,7 @@ describe('renewal listing', () => {
     })
 
     it('reports an on-schedule instance as such', async () => {
-      const row = await rowFor(pagInstanceIds[0])
+      const row = await rowFor(monthlyInstanceId)
       expect(row.offSchedule).toBe(false)
     })
   })
