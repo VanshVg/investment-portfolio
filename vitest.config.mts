@@ -25,6 +25,17 @@ export default defineConfig({
     // project's files. Confirmed empirically, not just read off the source:
     // the full suite was run three times with this split in place and the
     // pass count held every time (see task-9 report).
+    //
+    // That ordering is an implementation detail of Vitest's own scheduler
+    // (`groupSpecs`), not a documented, versioned API guarantee. A future
+    // Vitest upgrade could change how specs get bucketed and reopen the
+    // exact race this split exists to avoid — and the symptom would show up
+    // as an intermittent failure in some *other* integration file (one that
+    // happened to run concurrently with cron-reminders.test.ts again), not
+    // as a failure in the cron test itself, which is what would make it hard
+    // to trace back here. After bumping the vitest version, re-run the full
+    // suite several times and confirm the pass count holds before trusting
+    // this split still isolates the race.
     projects: [
       {
         extends: true,
