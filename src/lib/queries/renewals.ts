@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/db/types.generated'
+import type { DueFrequency } from '@/lib/domain/due-dates'
 
 export interface RenewalFilters {
   /** Inclusive ISO yyyy-mm-dd bounds. */
@@ -9,6 +10,10 @@ export interface RenewalFilters {
   memberId?: string
   /** Scope to one household — also the basis of the per-family ledger view. */
   familyId?: string
+  /** 1-based. Defaults to 1. */
+  page?: number
+  /** Defaults to 100. */
+  pageSize?: number
 }
 
 export interface RenewalRow {
@@ -20,23 +25,41 @@ export interface RenewalRow {
   label: string
   category: string
   managedBy: 'self' | 'external'
+  /**
+   * A `one_time` holding has no next period, so the row-action layer must not
+   * offer "mark as renewed" on it — carried here rather than forcing a second
+   * query against the same holding just to make that decision.
+   */
+  dueFrequency: DueFrequency
   familyId: string
   familyName: string
   memberId: string | null
   memberName: string | null
+  /**
+   * True when this instance's due date no longer sits on the holding's
+   * current schedule (kept because it carries payment evidence, a note, or a
+   * logged reminder — see reconcileDueInstances) rather than one the schedule
+   * still generates.
+   */
+  offSchedule: boolean
+  /** Distinct reminder windows already queued or sent for this instance. */
+  firedWindows: number[]
 }
 
 export interface RenewalListResult {
   rows: RenewalRow[]
+  /** Matching rows across every page, not just this one. */
+  total: number
+  page: number
+  pageSize: number
   /**
    * True when more due instances matched the window than were returned.
    * PostgREST caps a response at `max_rows` (1000, both locally and on the
    * hosted default) and returns HTTP 206 with `error: null` when it
-   * truncates — a status this client never inspects. This is the page where
-   * that silently bites: `due_instances` multiplies per holding per period,
-   * so a wide date window at ordinary scale can exceed 1000 rows well before
-   * `families` does. Not full pagination: there is no cursor to page with,
-   * only a fact the caller must not swallow.
+   * truncates — a status this client never inspects. Retained as a backstop
+   * now that the query pages properly: a page size equal to PostgREST's own
+   * cap would still truncate silently, and this is the page where that first
+   * bites.
    */
   truncated: boolean
 }
@@ -54,12 +77,21 @@ export async function listRenewals(
   filters: RenewalFilters,
   { maxRows = DEFAULT_MAX_ROWS }: { maxRows?: number } = {},
 ): Promise<RenewalListResult> {
+  const page = Math.max(1, filters.page ?? 1)
+  const pageSize = Math.min(Math.max(1, filters.pageSize ?? 100), maxRows)
+  const offset = (page - 1) * pageSize
+
+  // Ties on a due date are the normal case, not an edge case: a household
+  // with four policies renewing in the same week produces them constantly.
+  // Ordering by date alone leaves the tiebreak to the planner, and an
+  // unstable order across pages means a row can appear twice or not at all.
   let query = client
     .from('due_instances')
     .select(
-      `id, due_date, amount_due, payment_status,
+      `id, due_date, amount_due, payment_status, off_schedule,
+       reminder_log ( days_before ),
        holdings!inner (
-         id, label, category, managed_by, member_id, family_id,
+         id, label, category, managed_by, due_frequency, member_id, family_id,
          families!inner ( id, name ),
          family_members ( id, name )
        )`,
@@ -68,7 +100,8 @@ export async function listRenewals(
     .gte('due_date', filters.from)
     .lte('due_date', filters.to)
     .order('due_date', { ascending: true })
-    .range(0, maxRows - 1)
+    .order('id', { ascending: true })
+    .range(offset, offset + pageSize - 1)
 
   if (filters.managedBy) query = query.eq('holdings.managed_by', filters.managedBy)
   if (filters.memberId) query = query.eq('holdings.member_id', filters.memberId)
@@ -95,12 +128,25 @@ export async function listRenewals(
       label: holding.label,
       category: holding.category,
       managedBy: holding.managed_by,
+      dueFrequency: holding.due_frequency,
       familyId: family.id,
       familyName: family.name,
       memberId: member?.id ?? null,
       memberName: member?.name ?? null,
+      offSchedule: row.off_schedule === true,
+      firedWindows: [
+        ...new Set(
+          (row.reminder_log as { days_before: number }[] | null)?.map((r) => r.days_before) ?? [],
+        ),
+      ].sort((a, b) => b - a),
     } as RenewalRow
   })
 
-  return { rows, truncated: typeof count === 'number' && count > rows.length }
+  return {
+    rows,
+    total: count ?? rows.length,
+    page,
+    pageSize,
+    truncated: rows.length >= maxRows,
+  }
 }
