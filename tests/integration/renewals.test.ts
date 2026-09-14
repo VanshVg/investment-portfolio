@@ -158,10 +158,19 @@ describe('renewal listing', () => {
     const fixtureFamilyIds: string[] = []
 
     let fixtureFamilyId: string
-    // Two of these share a due date on purpose: ties on a due date are the
-    // normal case (a household with several policies renewing the same
-    // week), not an edge case, and a missing (due_date, id) tiebreak is
-    // exactly what lets a row land on two pages, or none.
+    // Three of these four share a due date, against a page size of two:
+    // ties on a due date are the normal case (a household with several
+    // policies renewing the same week), not an edge case, and a missing
+    // (due_date, id) tiebreak is exactly what lets a row land on two pages,
+    // or none. A tie of only two rows at pageSize 2 can never actually
+    // expose that: ordering by due_date alone already puts the whole tied
+    // pair ahead of every later date, so the pair always lands together on
+    // page 1 and the boundary never cuts through it — a missing tiebreak
+    // would be structurally unobservable. Tying three against a page size
+    // of two forces the boundary through the tie group instead: page 1 can
+    // only hold two of the three, so the third is pushed onto page 2
+    // alongside the next date, and which two land on page 1 is exactly what
+    // the (due_date, id) order — not just due_date — has to answer.
     let pagInstanceIds: string[] = []
     let firedInstanceId: string
     let offScheduleInstanceId: string
@@ -217,8 +226,8 @@ describe('renewal listing', () => {
       pagInstanceIds = [
         await insertFixtureInstance(pagHoldingA, '2029-03-10'),
         await insertFixtureInstance(pagHoldingB, '2029-03-10'),
-        await insertFixtureInstance(pagHoldingC, '2029-03-11'),
-        await insertFixtureInstance(pagHoldingD, '2029-03-12'),
+        await insertFixtureInstance(pagHoldingC, '2029-03-10'),
+        await insertFixtureInstance(pagHoldingD, '2029-03-11'),
       ]
 
       // One instance reminded at two windows, each to both recipients — the
@@ -320,9 +329,24 @@ describe('renewal listing', () => {
       expect(new Set(ids)).toEqual(new Set(pagInstanceIds))
 
       const dates = combined.map((r) => r.dueDate)
-      expect(dates.slice(0, 2).sort()).toEqual(['2029-03-10', '2029-03-10'])
-      expect(dates[2]).toBe('2029-03-11')
-      expect(dates[3]).toBe('2029-03-12')
+      // Three tied rows occupy positions 0-2 (two on page 1, one pushed onto
+      // page 2 — see the fixture comment above for why that split is what
+      // actually exercises the tiebreak), and the fourth, later date is
+      // forced into the last position.
+      expect(dates.slice(0, 3).sort()).toEqual(['2029-03-10', '2029-03-10', '2029-03-10'])
+      expect(dates[3]).toBe('2029-03-11')
+    })
+
+    it('returns an empty page past the end of the result set, with total unchanged', async () => {
+      const result = await listRenewals(client, {
+        from: PAGE_FROM,
+        to: PAGE_TO,
+        familyId: fixtureFamilyId,
+        page: 3,
+        pageSize: 2,
+      })
+      expect(result.rows).toEqual([])
+      expect(result.total).toBe(4)
     })
 
     it('reports the total independently of the page size', async () => {
