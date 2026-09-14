@@ -1,8 +1,21 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { adminClient, ensureUser } from '../helpers/db'
 import { hasActiveRules, runReminderSweep } from '@/lib/reminders/sweep'
-import { maxWindow, type RuleSet } from '@/lib/reminders/rules'
+import { loadReminderRules, maxWindow, type RuleSet } from '@/lib/reminders/rules'
 import type { SupabaseClient } from '@supabase/supabase-js'
+
+// Wraps the real loadReminderRules in a vi.fn whose default behaviour is the
+// actual implementation, so every test in this file still reads the genuine
+// reminder_rules table (including the seeded {30,15} category defaults)
+// unless a test explicitly overrides one call with mockImplementationOnce —
+// see "queues a day-of reminder when the sweep sees only {0} rules" below.
+// This is what lets a test control what the sweep sees without touching the
+// live, shared reminder_rules table, which other suites and the running app
+// depend on and which no test may mutate.
+vi.mock('@/lib/reminders/rules', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/reminders/rules')>()
+  return { ...actual, loadReminderRules: vi.fn(actual.loadReminderRules) }
+})
 
 const ADVISOR_EMAIL = 'sweep-admin@example.test'
 const UNREACHABLE_ADVISOR_EMAIL = 'sweep-admin-no-mobile@example.test'
@@ -387,8 +400,11 @@ describe('runReminderSweep', () => {
     // by this fixture either, before or after the fix. What this test does
     // pin is that the {0} pipeline itself — windowsFor preferring the
     // override, firedWindows firing a 0-day window on the due date, routing,
-    // and the insert — works end to end. The hasActiveRules describe block
-    // below pins the actual short-circuit regression directly.
+    // and the insert — works end to end, given a live table whose global
+    // maxWindow is already nonzero. It cannot reach the short-circuit branch
+    // itself; the mocked test below ("queues a day-of reminder when the
+    // sweep sees only {0} rules") does that by controlling what
+    // loadReminderRules returns rather than what the shared table contains.
     const family = await insertFamily('Sweep fixture — zero-day window', advisorId)
     const member = await insertMember(family, 'Zero-day client', '+919876500008', true)
     const holdingId = await insertHolding({
@@ -402,6 +418,43 @@ describe('runReminderSweep', () => {
 
     const ZERO_DAY = '2026-06-01'
     const dueInstanceId = await insertDueInstance(holdingId, ZERO_DAY) // due today
+
+    await runReminderSweep(admin, ZERO_DAY)
+
+    const rows = await logRowsFor(dueInstanceId)
+    expect(rows.map((r) => r.recipient_type).sort()).toEqual(['advisor', 'client'])
+    expect(rows.every((r) => r.days_before === 0)).toBe(true)
+  })
+
+  it('queues a day-of reminder when the sweep sees only {0} rules', async () => {
+    // Pins the sweep's actual use of hasActiveRules, not just the helper in
+    // isolation. The live reminder_rules table can never exercise this: the
+    // four seeded category defaults are permanently active at {30,15} and
+    // off limits to mutate, so the real global maxWindow is always >= 30 no
+    // matter what any fixture's own holding override says — see the note on
+    // the test above. Overriding loadReminderRules for this one call is the
+    // only way to make the sweep see a RuleSet whose sole entry is {0},
+    // without touching that shared table. maxWindow itself is untouched —
+    // this is the real implementation applied to the mocked data, so the
+    // test exercises the sweep's actual decision (hasActiveRules), not a
+    // stubbed arithmetic result.
+    const family = await insertFamily('Sweep fixture — hasActiveRules short-circuit', advisorId)
+    const member = await insertMember(family, 'Short-circuit client', '+919876500009', true)
+    const holdingId = await insertHolding({
+      familyId: family,
+      memberId: member,
+      managedBy: 'self',
+      label: 'Short-circuit plan',
+      remindersEnabled: true,
+    })
+    const ZERO_DAY = '2026-07-01'
+    const dueInstanceId = await insertDueInstance(holdingId, ZERO_DAY) // due today
+
+    const mockedLoadReminderRules = vi.mocked(loadReminderRules)
+    mockedLoadReminderRules.mockImplementationOnce(async () => ({
+      byCategory: new Map([['life_insurance', [0]]]),
+      byHolding: new Map(),
+    }))
 
     await runReminderSweep(admin, ZERO_DAY)
 
