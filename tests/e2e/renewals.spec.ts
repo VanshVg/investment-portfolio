@@ -43,18 +43,14 @@ async function createFamily(page: Page, name: string) {
 }
 
 /**
- * Opens the family workspace and returns its URL path, for a later plain
- * `page.goto`. A hard navigation is what forces the server component to
- * re-read the database; a `Link` click's soft app-router navigation might
- * instead serve a cached render from before the change under test.
+ * Opens the family workspace by clicking its link from the families list,
+ * the way the advisor actually navigates, and waits for the heading to
+ * confirm the page landed.
  */
-async function openFamily(page: Page, name: string): Promise<string> {
+async function openFamily(page: Page, name: string): Promise<void> {
   const link = page.getByRole('link', { name, exact: true })
-  const href = await link.getAttribute('href')
-  if (!href) throw new Error(`family link for "${name}" had no href`)
   await link.click()
   await expect(page.getByRole('heading', { name, exact: true })).toBeVisible()
-  return href
 }
 
 /**
@@ -128,7 +124,7 @@ test('marks a policy renewed and sees it roll to the next year', async ({ page }
   try {
     await signIn(page)
     await createFamily(page, FAMILY)
-    const familyHref = await openFamily(page, FAMILY)
+    await openFamily(page, FAMILY)
     await addLifePolicy(page, LABEL, due)
 
     const lifeSection = page.locator('#life')
@@ -155,9 +151,19 @@ test('marks a policy renewed and sees it roll to the next year', async ({ page }
     await expect(status).toHaveValue('paid')
 
     // markRenewed leaves this instance's own due date untouched -- only the
-    // holding's schedule moves, visible back on the family ledger. A hard
-    // navigation is required here; see openFamily.
-    await page.goto(familyHref)
+    // holding's schedule moves, visible back on the family ledger. Getting
+    // there by clicking the family's link matches how the advisor actually
+    // navigates, but it does not currently exercise the revalidatePath fix:
+    // under Next.js 16, a server function's revalidatePath call currently
+    // refreshes every previously visited page rather than only the path
+    // named, and the family page is fully dynamic (its data client reads
+    // cookies) with nothing cached to go stale either way. The integration
+    // tests in renewal-actions.test.ts are what actually pin the call to
+    // revalidatePath(`/families/${familyId}`); this journey becomes a real
+    // guard against a missing or wrong path if Next later makes
+    // revalidation path-specific, as its own docs say it will.
+    await page.goto('/families')
+    await openFamily(page, FAMILY)
     const policyRowAfter = page.locator('#life').getByRole('row').filter({ hasText: LABEL })
     await expect(policyRowAfter.getByText(dmy(due), { exact: true })).toHaveCount(0)
     await expect(policyRowAfter.getByText(dmy(nextYear), { exact: true })).toBeVisible()
