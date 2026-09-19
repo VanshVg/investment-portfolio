@@ -259,6 +259,44 @@ describe('RenewalTable', () => {
       await waitFor(() => expect(setPaymentStatus).toHaveBeenCalledWith('instance-1', 'paid'))
     })
 
+    // The `if (pending) return` guard at the top of onChange is what makes a
+    // second, overlapping save unreachable now -- it used to be the native
+    // `disabled` attribute's job, before that was removed because disabling
+    // a focused select blurs it with no way back (see the focus-retention
+    // test above). Nothing else in this file exercises the guard itself: a
+    // future edit could delete that one line and every other test here would
+    // still pass.
+    it('ignores a second change fired while the first save for this control is still pending', async () => {
+      let resolveFirst: (value: ActionResult) => void = () => {}
+      const firstPromise = new Promise<ActionResult>((resolve) => {
+        resolveFirst = resolve
+      })
+      const setPaymentStatus = vi.fn(() => firstPromise)
+      renderTable([row({ dueInstanceId: 'instance-1', paymentStatus: 'unknown' })], setPaymentStatus)
+
+      const select = screen.getByRole('combobox', {
+        name: 'Payment status for HDFC Life Click2Protect, Shah family (Ramesh Shah), due 01-10-2026',
+      }) as HTMLSelectElement
+
+      fireEvent.change(select, { target: { value: 'paid' } })
+      await waitFor(() => expect(setPaymentStatus).toHaveBeenCalledTimes(1))
+      expect(select).toHaveAttribute('aria-busy', 'true')
+
+      // A different choice while the first save is still in flight -- the
+      // guard must ignore this rather than starting a second, overlapping
+      // save.
+      fireEvent.change(select, { target: { value: 'unpaid' } })
+
+      expect(setPaymentStatus).toHaveBeenCalledTimes(1)
+      expect(setPaymentStatus).toHaveBeenCalledWith('instance-1', 'paid')
+      expect(select.value).toBe('paid')
+
+      resolveFirst({ ok: true, id: 'instance-1' })
+      await waitFor(() => expect(select).toHaveAttribute('aria-busy', 'false'))
+      expect(setPaymentStatus).toHaveBeenCalledTimes(1)
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    })
+
     // Optimistic update, rolled back — a control that kept showing "Paid"
     // after the write actually failed would make the database wrong without
     // anything on screen saying so.
