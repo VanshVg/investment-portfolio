@@ -3,7 +3,7 @@ import { timingSafeEqual } from 'node:crypto'
 import { createAdminSupabase } from '@/lib/supabase/admin'
 import { reconcileDueInstances } from '@/lib/reminders/reconcile'
 import { horizonFrom } from '@/lib/reminders/horizon'
-import { runReminderSweep } from '@/lib/reminders/sweep'
+import { runReminderSweep, type SweepResult } from '@/lib/reminders/sweep'
 import { todayInIndia } from '@/lib/domain/dates'
 
 // The sweep walks every holding; it must not be served from a cache.
@@ -65,7 +65,16 @@ export async function GET(request: Request): Promise<Response> {
     }
   }
 
-  const sweep = await runReminderSweep(supabase, today)
+  let sweep: SweepResult
+  try {
+    sweep = await runReminderSweep(supabase, today)
+  } catch (cause) {
+    console.error('reminder sweep failed', cause)
+    // Counts only, even on failure: the caller is a scheduler, and this
+    // handler holds a client that ignores RLS, so nothing it returns may
+    // carry client data, error responses included.
+    return Response.json({ generated, removed, sweep: null }, { status: 500 })
+  }
 
   // Counts only. This response must never carry client data: the caller is a
   // scheduler, and the client that produced these numbers ignores RLS.
