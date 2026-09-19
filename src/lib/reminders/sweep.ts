@@ -71,7 +71,7 @@ export async function runReminderSweep(
     .select(
       `id, due_date,
        holdings!inner (
-         id, category, managed_by, reminders_enabled, member_id,
+         id, category, managed_by, reminders_enabled, member_id, next_due_date,
          families!inner ( id, owner_advisor_id, profiles:owner_advisor_id ( mobile ) ),
          family_members ( mobile, whatsapp_consent )
        )`,
@@ -105,7 +105,22 @@ export async function runReminderSweep(
         | { mobile: string | null; whatsapp_consent: boolean }
         | null
 
-      const dueDate = fromISODate(instance.due_date as string)!
+      const dueDateISO = instance.due_date as string
+      const nextDueDate = holding.next_due_date as string | null
+      // mark-as-renewed only ever advances the holding's own next_due_date,
+      // ticking the row it renewed rather than removing it. If that tick is
+      // later reset to Unknown — or the tick failed after the advance — the
+      // row looks pristine again, but the period it belongs to has already
+      // been renewed. It is not an unresolved due date, whatever its tick
+      // currently reads, and a reminder about it — especially to the client
+      // — would be the wrong message. Equality is deliberately let through:
+      // the holding's own current due date must still fire.
+      if (nextDueDate && dueDateISO < nextDueDate) {
+        result.skipped += 1
+        continue
+      }
+
+      const dueDate = fromISODate(dueDateISO)!
       const windows = firedWindows(
         dueDate,
         windowsFor(rules, {

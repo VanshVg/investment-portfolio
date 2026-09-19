@@ -524,6 +524,60 @@ describe('runReminderSweep', () => {
       const rows = await logRowsFor(id)
       expect(rows.map((r) => r.recipient_type).sort()).toEqual(['advisor', 'client'])
     })
+
+    async function holdingDueBeforeNextDueDate(
+      label: string,
+      mobile: string,
+      nextDueDate: string | null,
+    ): Promise<string> {
+      const family = await insertFamily(`Sweep fixture — ${label}`, advisorId)
+      const member = await insertMember(family, `${label} client`, mobile, true)
+      const { data, error } = await admin
+        .from('holdings')
+        .insert({
+          family_id: family,
+          member_id: member,
+          category: 'life_insurance',
+          managed_by: 'self',
+          label,
+          reminders_enabled: true,
+          next_due_date: nextDueDate,
+        })
+        .select()
+        .single()
+      if (error) throw new Error(error.message)
+      return await insertDueInstance(data!.id, DUE_DATE)
+    }
+
+    // Mark-as-renewed only advances the holding's own next_due_date; the row
+    // it ticked stays on the books as the advisor's record. If its tick is
+    // later reset to Unknown (or the tick failed after the advance), it looks
+    // pristine again, but the period it belongs to has already been renewed —
+    // reminding about it, especially to the client, would be the wrong
+    // message about a premium already settled.
+    it('queues nothing for an instance dated before its holding is next due (already renewed)', async () => {
+      const id = await holdingDueBeforeNextDueDate(
+        'Renewed early, reset to Unknown',
+        '+919876500014',
+        '2027-06-21', // the holding has since moved a full year past this due date
+      )
+      await runReminderSweep(admin, DAY)
+      expect(await logRowsFor(id)).toHaveLength(0)
+    })
+
+    // The boundary must not swallow the holding's own current due date: an
+    // instance is only "already renewed" when it is strictly earlier than
+    // next_due_date, not when it equals it.
+    it('still queues a reminder for the instance at the holding own current due date', async () => {
+      const id = await holdingDueBeforeNextDueDate(
+        'At its current due date',
+        '+919876500015',
+        DUE_DATE,
+      )
+      await runReminderSweep(admin, DAY)
+      const rows = await logRowsFor(id)
+      expect(rows.map((r) => r.recipient_type).sort()).toEqual(['advisor', 'client'])
+    })
   })
 })
 
