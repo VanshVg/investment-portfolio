@@ -224,6 +224,7 @@ describe('setPaymentStatus', () => {
 
 describe('markRenewed', () => {
   const markRenewedFamilyIds: string[] = []
+  let familyId: string
   let holdingId: string
   let renewedInstanceId: string
   let oneTimeHoldingId: string
@@ -239,6 +240,7 @@ describe('markRenewed', () => {
       .single()
     if (familyError) throw new Error(`fixture family insert failed: ${familyError.message}`)
     markRenewedFamilyIds.push(family!.id)
+    familyId = family!.id as string
 
     // Anchored a year before its next occurrence, so advancing along the grid
     // (2027-10-01) and re-anchoring to the instance's own due date
@@ -334,10 +336,22 @@ describe('markRenewed', () => {
     expect(result.ok).toBe(false)
     expect(await nextDueFor(oneTimeHoldingId)).toBe('2027-10-01') // unchanged
   })
+
+  // The renewals listing revalidation alone leaves the family's own ledger
+  // page rendering the pre-renewal due date until a hard reload -- that page
+  // lives at /families/[familyId], not /families, and only a path targeting
+  // this specific family actually refreshes it.
+  it("revalidates the family's ledger page after a successful renewal", async () => {
+    revalidatePath.mockClear()
+    const result = await markRenewed(renewedInstanceId)
+    expect(result.ok).toBe(true)
+    expect(revalidatePath).toHaveBeenCalledWith(`/families/${familyId}`)
+  })
 })
 
 describe('markRenewed partial failure (advance succeeds, tick fails)', () => {
   const partialFailureFamilyIds: string[] = []
+  let familyId: string
   let holdingId: string
   let instanceId: string
 
@@ -351,6 +365,7 @@ describe('markRenewed partial failure (advance succeeds, tick fails)', () => {
       .single()
     if (familyError) throw new Error(`fixture family insert failed: ${familyError.message}`)
     partialFailureFamilyIds.push(family!.id)
+    familyId = family!.id as string
 
     const { data: holding, error: holdingError } = await admin
       .from('holdings')
@@ -392,6 +407,7 @@ describe('markRenewed partial failure (advance succeeds, tick fails)', () => {
   })
 
   it('advances the holding but leaves the instance unmarked, and reports the explanatory failure, when the tick fails after the advance succeeds', async () => {
+    revalidatePath.mockClear()
     mockCreateServerSupabase.mockImplementationOnce(async () =>
       failSecondDueInstancesWrite(await signedInClient(EMAIL, PASSWORD)),
     )
@@ -407,6 +423,10 @@ describe('markRenewed partial failure (advance succeeds, tick fails)', () => {
     expect(await nextDueFor(holdingId)).toBe('2027-11-01')
     // The tick never landed -- the instance must not read as paid.
     expect(await statusFor(instanceId)).not.toBe('paid')
+    // The due date already moved, so the family's ledger page is stale on
+    // this path too -- it must revalidate even though the action overall
+    // reports failure.
+    expect(revalidatePath).toHaveBeenCalledWith(`/families/${familyId}`)
   })
 
   it('succeeds on retry: the advance recomputes the same date and the tick completes', async () => {

@@ -75,7 +75,9 @@ export async function markRenewed(dueInstanceId: string): Promise<ActionResult> 
 
   const { data: instance, error: readError } = await supabase
     .from('due_instances')
-    .select('id, due_date, holdings!inner ( id, anchor_due_date, next_due_date, due_frequency )')
+    .select(
+      'id, due_date, holdings!inner ( id, family_id, anchor_due_date, next_due_date, due_frequency )',
+    )
     .eq('id', dueInstanceId)
     .maybeSingle()
   if (readError) return fromPostgrestError(readError)
@@ -88,6 +90,7 @@ export async function markRenewed(dueInstanceId: string): Promise<ActionResult> 
   const row = instance as JoinedRow
   const holding = row.holdings as {
     id: string
+    family_id: string
     anchor_due_date: string | null
     next_due_date: string | null
     due_frequency: DueFrequency
@@ -100,6 +103,17 @@ export async function markRenewed(dueInstanceId: string): Promise<ActionResult> 
 
   const next = nextDueDateAfter(anchor, holding.due_frequency, current)
   if (!next) return NOT_RENEWABLE
+
+  // Both the renewals listing and this holding's own family ledger page
+  // render this due date, and the ledger page revalidation must key off the
+  // holding just read above -- markRenewed has no route param to take it
+  // from, unlike every write in holding-actions.ts. Shared by both the
+  // success path and the advanced-but-not-ticked partial-failure path below,
+  // since the due date has already moved on both.
+  const revalidateAfterRenewal = () => {
+    revalidatePath('/renewals')
+    revalidatePath(`/families/${holding.family_id}`)
+  }
 
   // Advance first, tick second. These are two writes with no shared
   // transaction, so one of them can succeed while the other fails; this
@@ -124,8 +138,14 @@ export async function markRenewed(dueInstanceId: string): Promise<ActionResult> 
     .update({ payment_status: 'paid', paid_on: toISODate(new Date()) })
     .eq('id', dueInstanceId)
     .select('id')
-  if (tickError) return RENEWED_BUT_NOT_TICKED
-  if (!ticked || ticked.length === 0) return RENEWED_BUT_NOT_TICKED
+  if (tickError) {
+    revalidateAfterRenewal()
+    return RENEWED_BUT_NOT_TICKED
+  }
+  if (!ticked || ticked.length === 0) {
+    revalidateAfterRenewal()
+    return RENEWED_BUT_NOT_TICKED
+  }
 
   // The following due date should exist before the page re-renders, so the row
   // the advisor just cleared is replaced by the next one rather than vanishing.
@@ -135,7 +155,6 @@ export async function markRenewed(dueInstanceId: string): Promise<ActionResult> 
     console.error(`due-instance refresh failed after renewing holding ${holding.id}`, cause)
   }
 
-  revalidatePath('/renewals')
-  revalidatePath('/families')
+  revalidateAfterRenewal()
   return { ok: true, id: dueInstanceId }
 }
