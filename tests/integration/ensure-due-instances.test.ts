@@ -1,7 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { adminClient, ensureUser } from '../helpers/db'
 import { ensureDueInstances } from '@/lib/reminders/ensure-due-instances'
-import { addMonths } from 'date-fns'
+import { horizonFrom } from '@/lib/reminders/horizon'
+import { addDays, addMonths } from 'date-fns'
 import { fromISODate, toISODate, todayInIndia } from '@/lib/domain/dates'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { JUST_AFTER_IST_MIDNIGHT, UTC_DATE_AT_THAT_INSTANT, onUtcHostAt } from '../helpers/clock'
@@ -14,14 +15,29 @@ const PASSWORD = 'test-password-123'
 // client stands in for both "arrange fixtures" and "the thing under test".
 const admin: SupabaseClient = adminClient()
 
-// A single horizon shared across the whole-window tests, matching the shape
-// the real callers use ("through" a fixed number of months out).
-const THROUGH = '2027-10-06'
-
 // Computed the same way the implementation computes "today", rather than a
 // hardcoded literal, so the "due exactly today" case below can't drift out
 // of alignment with the boundary it is testing.
 const TODAY = todayInIndia()
+
+// A single horizon shared across the whole-window tests, matching the shape
+// the real callers use ("through" a fixed number of months out) -- derived
+// from TODAY via the real horizon function, so it always sits ahead of every
+// "future" fixture below, however long this suite goes unrun.
+const THROUGH = horizonFrom(TODAY)
+
+// Two weeks out: comfortably inside THROUGH, and its annual occurrence a
+// year later still comfortably inside THROUGH -- so this fixture always
+// generates exactly the two dates the "in the window" test counts, whatever
+// today happens to be when the suite runs.
+const ANNUAL_FIRST = toISODate(addDays(fromISODate(TODAY)!, 14))
+const ANNUAL_SECOND = toISODate(addMonths(fromISODate(ANNUAL_FIRST)!, 12))
+
+// Six months out: always inside THROUGH (13 months out) and always after
+// TODAY, so the amount-refresh and off-schedule-clear assertions below --
+// which only ever touch a row at or after today -- keep exercising the row
+// they mean to, no matter when this suite runs.
+const FUTURE_DUE = toISODate(addMonths(fromISODate(TODAY)!, 6))
 
 let familyId: string
 let holdingId: string
@@ -81,8 +97,8 @@ describe('ensureDueInstances', () => {
         category: 'life_insurance',
         label: 'Annual term plan',
         periodic_amount: 25_000,
-        anchor_due_date: '2026-10-01',
-        next_due_date: '2026-10-01',
+        anchor_due_date: ANNUAL_FIRST,
+        next_due_date: ANNUAL_FIRST,
         due_frequency: 'annual',
       })
       .select()
@@ -113,8 +129,8 @@ describe('ensureDueInstances', () => {
         category: 'life_insurance',
         label: 'Refresh candidate plan',
         periodic_amount: 25_000,
-        anchor_due_date: '2027-10-01',
-        next_due_date: '2027-10-01',
+        anchor_due_date: FUTURE_DUE,
+        next_due_date: FUTURE_DUE,
         due_frequency: 'annual',
       })
       .select()
@@ -129,8 +145,8 @@ describe('ensureDueInstances', () => {
         category: 'life_insurance',
         label: 'Touched plan',
         periodic_amount: 25_000,
-        anchor_due_date: '2027-10-01',
-        next_due_date: '2027-10-01',
+        anchor_due_date: FUTURE_DUE,
+        next_due_date: FUTURE_DUE,
         due_frequency: 'annual',
       })
       .select()
@@ -145,8 +161,8 @@ describe('ensureDueInstances', () => {
         category: 'life_insurance',
         label: 'Off-schedule plan',
         periodic_amount: 25_000,
-        anchor_due_date: '2027-10-01',
-        next_due_date: '2027-10-01',
+        anchor_due_date: FUTURE_DUE,
+        next_due_date: FUTURE_DUE,
         due_frequency: 'annual',
       })
       .select()
@@ -189,7 +205,15 @@ describe('ensureDueInstances', () => {
 
   it('creates one instance per scheduled date in the window', async () => {
     const result = await ensureDueInstances(admin, holdingId, THROUGH)
-    expect(result.created).toBe(2) // 2026-10-01 and 2027-10-01
+    expect(result.created).toBe(2)
+
+    const { data, error } = await admin
+      .from('due_instances')
+      .select('due_date')
+      .eq('holding_id', holdingId)
+      .order('due_date')
+    if (error) throw new Error(error.message)
+    expect((data ?? []).map((row) => row.due_date)).toEqual([ANNUAL_FIRST, ANNUAL_SECOND])
   })
 
   it('is a no-op on a second run', async () => {
@@ -215,7 +239,7 @@ describe('ensureDueInstances', () => {
 
   it('refreshes the amount on a future pristine instance', async () => {
     await ensureDueInstances(admin, refreshHoldingId, THROUGH)
-    expect(await amountFor(refreshHoldingId, '2027-10-01')).toBe(25_000)
+    expect(await amountFor(refreshHoldingId, FUTURE_DUE)).toBe(25_000)
 
     const { error } = await admin
       .from('holdings')
@@ -224,11 +248,11 @@ describe('ensureDueInstances', () => {
     if (error) throw new Error(error.message)
 
     await ensureDueInstances(admin, refreshHoldingId, THROUGH)
-    expect(await amountFor(refreshHoldingId, '2027-10-01')).toBe(30_000)
+    expect(await amountFor(refreshHoldingId, FUTURE_DUE)).toBe(30_000)
   })
 
   it('leaves the amount alone on an instance the advisor has touched', async () => {
-    const paidDate = '2027-10-01'
+    const paidDate = FUTURE_DUE
     await ensureDueInstances(admin, touchedHoldingId, THROUGH)
 
     const { error: markPaidError } = await admin
@@ -258,19 +282,19 @@ describe('ensureDueInstances', () => {
 
     const { error: markTouchedError } = await admin
       .from('due_instances')
-      .update({ payment_status: 'paid', paid_on: '2027-10-01', off_schedule: true })
+      .update({ payment_status: 'paid', paid_on: FUTURE_DUE, off_schedule: true })
       .eq('holding_id', offScheduleHoldingId)
-      .eq('due_date', '2027-10-01')
+      .eq('due_date', FUTURE_DUE)
     if (markTouchedError) throw new Error(markTouchedError.message)
 
-    const before = await instanceFor(offScheduleHoldingId, '2027-10-01')
+    const before = await instanceFor(offScheduleHoldingId, FUTURE_DUE)
     expect(before.off_schedule).toBe(true)
     expect(before.payment_status).toBe('paid')
 
     const result = await ensureDueInstances(admin, offScheduleHoldingId, THROUGH)
     expect(result.offScheduleCleared).toBe(1)
 
-    const after = await instanceFor(offScheduleHoldingId, '2027-10-01')
+    const after = await instanceFor(offScheduleHoldingId, FUTURE_DUE)
     expect(after.off_schedule).toBe(false)
     expect(after.payment_status).toBe('paid') // evidence untouched
   })

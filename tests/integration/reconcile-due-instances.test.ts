@@ -2,7 +2,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { adminClient, ensureUser } from '../helpers/db'
 import { ensureDueInstances } from '@/lib/reminders/ensure-due-instances'
 import { reconcileDueInstances } from '@/lib/reminders/reconcile'
-import { addDays } from 'date-fns'
+import { horizonFrom } from '@/lib/reminders/horizon'
+import { addDays, addMonths, addYears } from 'date-fns'
 import { fromISODate, toISODate, todayInIndia } from '@/lib/domain/dates'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { JUST_AFTER_IST_MIDNIGHT, UTC_DATE_AT_THAT_INSTANT, onUtcHostAt } from '../helpers/clock'
@@ -16,24 +17,36 @@ const PASSWORD = 'test-password-123'
 // ensure-due-instances.test.ts, the module this one builds directly on.
 const admin: SupabaseClient = adminClient()
 
-// Matches the horizon shape the real callers use (a fixed number of months
-// out from today).
-const THROUGH = '2027-10-06'
-
-// A date safely in the past relative to any plausible run of this suite.
-const PAST_PRISTINE_DATE = '2025-01-01'
-
 // Computed the same way the implementation computes "today", rather than a
 // hardcoded literal, so the boundary tests below (today vs. yesterday) can't
 // drift out of alignment with the boundary they exist to pin.
 const TODAY = todayInIndia()
 const YESTERDAY = toISODate(addDays(fromISODate(TODAY)!, -1))
 
+// Matches the horizon shape the real callers use (a fixed number of months
+// out from today) — derived from TODAY via the real horizon function.
+const THROUGH = horizonFrom(TODAY)
+
+// A year in the past relative to whenever this suite runs, so it stays
+// safely in the past no matter how long the suite goes unrun.
+const PAST_PRISTINE_DATE = toISODate(addYears(fromISODate(TODAY)!, -1))
+
 // Far enough beyond THROUGH that a holding rescheduled to it always has an
 // empty wanted schedule, regardless of what "today" happens to be when this
 // suite runs — the boundary tests below need the old instance to be
 // unambiguously off-schedule, not just off by coincidence of date.
-const FAR_FUTURE_ANCHOR = '2030-01-01'
+const FAR_FUTURE_ANCHOR = toISODate(addYears(fromISODate(TODAY)!, 5))
+
+// The initial schedule several fixtures below start from: two weeks out (so
+// comfortably inside THROUGH) with its annual occurrence a year later (still
+// comfortably inside THROUGH) — a schedule the fixtures then move away from.
+const INITIAL_ANCHOR = toISODate(addDays(fromISODate(TODAY)!, 14))
+const INITIAL_SECOND = toISODate(addMonths(fromISODate(INITIAL_ANCHOR)!, 12))
+
+// The corrected schedule those fixtures are rescheduled to — far enough past
+// INITIAL_ANCHOR/INITIAL_SECOND to sit on a clearly distinct grid, and still
+// comfortably inside THROUGH.
+const RESCHEDULED_ANCHOR = toISODate(addDays(fromISODate(TODAY)!, 45))
 
 let familyId: string
 let scheduleHoldingId: string
@@ -85,7 +98,7 @@ async function statusFor(holdingId: string, dueDate: string): Promise<string> {
   return (await instanceFor(holdingId, dueDate)).payment_status
 }
 
-/** A fresh annual holding due 2026-10-01, with its first two instances generated. */
+/** A fresh annual holding due INITIAL_ANCHOR, with its first two instances generated. */
 async function newScheduledHolding(label: string): Promise<string> {
   const { data: holding, error } = await admin
     .from('holdings')
@@ -94,15 +107,15 @@ async function newScheduledHolding(label: string): Promise<string> {
       category: 'life_insurance',
       label,
       periodic_amount: 25_000,
-      anchor_due_date: '2026-10-01',
-      next_due_date: '2026-10-01',
+      anchor_due_date: INITIAL_ANCHOR,
+      next_due_date: INITIAL_ANCHOR,
       due_frequency: 'annual',
     })
     .select()
     .single()
   if (error) throw new Error(error.message)
   const id = holding!.id as string
-  // 2026-10-01 and 2027-10-01 within THROUGH.
+  // INITIAL_ANCHOR and INITIAL_SECOND, both within THROUGH.
   await ensureDueInstances(admin, id, THROUGH)
   return id
 }
@@ -131,17 +144,17 @@ describe('reconcileDueInstances', () => {
     // Scenario 1 & 6: a pristine future instance that leaves the schedule —
     // deleted, and the new schedule's date takes its place.
     scheduleHoldingId = await newScheduledHolding('Pristine reschedule plan')
-    await rescheduleTo(scheduleHoldingId, '2026-11-01')
+    await rescheduleTo(scheduleHoldingId, RESCHEDULED_ANCHOR)
 
     // Scenario 2: a future instance carrying a payment status — kept, flagged.
     paidHoldingId = await newScheduledHolding('Paid off-schedule plan')
     const { error: paidError } = await admin
       .from('due_instances')
-      .update({ payment_status: 'paid', paid_on: '2027-10-01' })
+      .update({ payment_status: 'paid', paid_on: INITIAL_SECOND })
       .eq('holding_id', paidHoldingId)
-      .eq('due_date', '2027-10-01')
+      .eq('due_date', INITIAL_SECOND)
     if (paidError) throw new Error(paidError.message)
-    await rescheduleTo(paidHoldingId, '2026-11-01')
+    await rescheduleTo(paidHoldingId, RESCHEDULED_ANCHOR)
 
     // Scenario 3: a future instance carrying a note — kept, flagged.
     noteHoldingId = await newScheduledHolding('Noted off-schedule plan')
@@ -149,9 +162,9 @@ describe('reconcileDueInstances', () => {
       .from('due_instances')
       .update({ note: 'Called client, asked to confirm renewal date.' })
       .eq('holding_id', noteHoldingId)
-      .eq('due_date', '2027-10-01')
+      .eq('due_date', INITIAL_SECOND)
     if (noteError) throw new Error(noteError.message)
-    await rescheduleTo(noteHoldingId, '2026-11-01')
+    await rescheduleTo(noteHoldingId, RESCHEDULED_ANCHOR)
 
     // Scenario 4: a future instance with a logged reminder — kept, flagged.
     reminderHoldingId = await newScheduledHolding('Reminded off-schedule plan')
@@ -159,7 +172,7 @@ describe('reconcileDueInstances', () => {
       .from('due_instances')
       .select('id')
       .eq('holding_id', reminderHoldingId)
-      .eq('due_date', '2027-10-01')
+      .eq('due_date', INITIAL_SECOND)
       .single()
     if (reminderInstanceError) throw new Error(reminderInstanceError.message)
     const { error: logError } = await admin.from('reminder_log').insert({
@@ -171,7 +184,7 @@ describe('reconcileDueInstances', () => {
       status: 'sent',
     })
     if (logError) throw new Error(logError.message)
-    await rescheduleTo(reminderHoldingId, '2026-11-01')
+    await rescheduleTo(reminderHoldingId, RESCHEDULED_ANCHOR)
 
     // Scenario 5: a past pristine instance, off any schedule — must never be
     // touched. Inserted directly: due_instances need not sit on the anchor
@@ -184,8 +197,8 @@ describe('reconcileDueInstances', () => {
         category: 'life_insurance',
         label: 'Past instance plan',
         periodic_amount: 25_000,
-        anchor_due_date: '2026-10-01',
-        next_due_date: '2026-10-01',
+        anchor_due_date: INITIAL_ANCHOR,
+        next_due_date: INITIAL_ANCHOR,
         due_frequency: 'annual',
       })
       .select()
@@ -196,12 +209,12 @@ describe('reconcileDueInstances', () => {
       .from('due_instances')
       .insert({ holding_id: pastHoldingId, due_date: PAST_PRISTINE_DATE, amount_due: 25_000 })
     if (pastInstanceError) throw new Error(pastInstanceError.message)
-    await rescheduleTo(pastHoldingId, '2026-11-01')
+    await rescheduleTo(pastHoldingId, RESCHEDULED_ANCHOR)
 
     // Scenario 7: counts. A fresh holding, rescheduled the same way, so the
     // run under test both deletes and creates.
     countsHoldingId = await newScheduledHolding('Counts plan')
-    await rescheduleTo(countsHoldingId, '2026-11-01')
+    await rescheduleTo(countsHoldingId, RESCHEDULED_ANCHOR)
 
     // Boundary: Decision 3 defines past as strictly due_date < today, so an
     // instance due exactly today is not past and stays eligible for
@@ -248,18 +261,18 @@ describe('reconcileDueInstances', () => {
 
   it('deletes a future pristine instance that left the schedule', async () => {
     await reconcileDueInstances(admin, scheduleHoldingId, THROUGH)
-    expect(await datesFor(scheduleHoldingId)).not.toContain('2027-10-01')
+    expect(await datesFor(scheduleHoldingId)).not.toContain(INITIAL_SECOND)
   })
 
   it('keeps a future instance carrying a payment status, and marks it off-schedule', async () => {
     await reconcileDueInstances(admin, paidHoldingId, THROUGH)
-    expect(await offScheduleFor(paidHoldingId, '2027-10-01')).toBe(true)
-    expect(await statusFor(paidHoldingId, '2027-10-01')).toBe('paid')
+    expect(await offScheduleFor(paidHoldingId, INITIAL_SECOND)).toBe(true)
+    expect(await statusFor(paidHoldingId, INITIAL_SECOND)).toBe('paid')
   })
 
   it('keeps a future instance carrying a note, and marks it off-schedule', async () => {
     await reconcileDueInstances(admin, noteHoldingId, THROUGH)
-    const instance = await instanceFor(noteHoldingId, '2027-10-01')
+    const instance = await instanceFor(noteHoldingId, INITIAL_SECOND)
     expect(instance.off_schedule).toBe(true)
     // Evidence intact, not merely "present": the note that made it evidence
     // in the first place must survive alongside the flag.
@@ -268,7 +281,7 @@ describe('reconcileDueInstances', () => {
 
   it('keeps a future instance with a logged reminder, and marks it off-schedule', async () => {
     await reconcileDueInstances(admin, reminderHoldingId, THROUGH)
-    const instance = await instanceFor(reminderHoldingId, '2027-10-01')
+    const instance = await instanceFor(reminderHoldingId, INITIAL_SECOND)
     expect(instance.off_schedule).toBe(true)
 
     // Evidence intact: the logged reminder that made this instance
@@ -291,7 +304,7 @@ describe('reconcileDueInstances', () => {
 
   it('generates the new schedule after clearing the old', async () => {
     await reconcileDueInstances(admin, scheduleHoldingId, THROUGH)
-    expect(await datesFor(scheduleHoldingId)).toContain('2026-11-01')
+    expect(await datesFor(scheduleHoldingId)).toContain(RESCHEDULED_ANCHOR)
   })
 
   it('reports counts that add up', async () => {
