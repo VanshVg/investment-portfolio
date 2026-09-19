@@ -2,7 +2,11 @@ import { randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { adminClient, anonClient, ensureUser, signedInClient } from '../helpers/db'
-import { todayInIndia } from '@/lib/domain/dates'
+import { addDays } from 'date-fns'
+import { fromISODate, toISODate, todayInIndia } from '@/lib/domain/dates'
+import { ensureDueInstances } from '@/lib/reminders/ensure-due-instances'
+import { reconcileDueInstances } from '@/lib/reminders/reconcile'
+import { horizonFrom } from '@/lib/reminders/horizon'
 import { IST_DATE_AT_THAT_INSTANT, JUST_AFTER_IST_MIDNIGHT, onUtcHostAt } from '../helpers/clock'
 
 /**
@@ -475,5 +479,149 @@ describe('markRenewed partial failure (advance succeeds, tick fails)', () => {
     // Unchanged from the failed attempt -- retrying re-derives the same next
     // date from the still-unmoved anchor and due_date, it doesn't drift.
     expect(await nextDueFor(holdingId)).toBe('2027-11-01')
+  })
+})
+
+/**
+ * Renewing before the due date is the normal case: the advisor hears the
+ * premium is paid a week or two early. The paid instance is then still dated
+ * today or later, but earlier than the holding's new next_due_date. It is a
+ * real date on the holding's grid, so reconciliation must leave it exactly
+ * as it is -- neither flagged off-schedule nor deleted.
+ *
+ * Every date is derived from today, because the behaviour depends on where
+ * the instance sits relative to today.
+ */
+describe('reconciliation after an early renewal', () => {
+  const earlyRenewalFamilyIds: string[] = []
+  let familyId: string
+  const today = todayInIndia()
+  const through = horizonFrom(today)
+  const dueDate = toISODate(addDays(fromISODate(today)!, 10))
+
+  async function instanceOn(holdingId: string, date: string) {
+    const { data, error } = await admin
+      .from('due_instances')
+      .select('id, payment_status, off_schedule')
+      .eq('holding_id', holdingId)
+      .eq('due_date', date)
+      .maybeSingle()
+    if (error) throw new Error(`fixture read failed: ${error.message}`)
+    return data
+  }
+
+  /** An annual policy due in ten days, with its schedule generated. */
+  async function policyDueSoon(label: string): Promise<{ holdingId: string; instanceId: string }> {
+    const { data: holding, error } = await admin
+      .from('holdings')
+      .insert({
+        family_id: familyId,
+        category: 'life_insurance',
+        label,
+        periodic_amount: 25_000,
+        due_frequency: 'annual',
+        anchor_due_date: dueDate,
+        next_due_date: dueDate,
+      })
+      .select('id')
+      .single()
+    if (error) throw new Error(`fixture holding insert failed: ${error.message}`)
+    await ensureDueInstances(admin, holding!.id, through)
+    const instance = await instanceOn(holding!.id, dueDate)
+    if (!instance) throw new Error('fixture due instance was not generated')
+    return { holdingId: holding!.id as string, instanceId: instance.id as string }
+  }
+
+  beforeAll(async () => {
+    const user = await ensureUser(EMAIL, PASSWORD, 'admin')
+    const { data: family, error } = await admin
+      .from('families')
+      .insert({ name: 'Early renewal fixture', owner_advisor_id: user!.id })
+      .select('id')
+      .single()
+    if (error) throw new Error(`fixture family insert failed: ${error.message}`)
+    earlyRenewalFamilyIds.push(family!.id)
+    familyId = family!.id as string
+  })
+
+  afterAll(async () => {
+    if (earlyRenewalFamilyIds.length === 0) return
+    const { data, error } = await admin
+      .from('families')
+      .delete()
+      .in('id', earlyRenewalFamilyIds)
+      .select('id')
+    if (error) throw new Error(`fixture cleanup failed: ${error.message}`)
+    if (!data || data.length !== earlyRenewalFamilyIds.length) {
+      throw new Error(
+        `fixture cleanup deleted ${data?.length ?? 0} of ${earlyRenewalFamilyIds.length} families`,
+      )
+    }
+  })
+
+  it('leaves the renewed instance on schedule, not flagged off-schedule', async () => {
+    const { holdingId, instanceId } = await policyDueSoon('Early renewal, then reconcile')
+
+    const renewed = await markRenewed(instanceId)
+    expect(renewed.ok).toBe(true)
+
+    const result = await reconcileDueInstances(admin, holdingId, through)
+
+    const instance = await instanceOn(holdingId, dueDate)
+    expect(instance?.payment_status).toBe('paid')
+    expect(instance?.off_schedule).toBe(false)
+    expect(result.preserved).toBe(0)
+    expect(result.deleted).toBe(0)
+  })
+
+  // Instances renewed early before this was fixed were flagged, and nothing
+  // cleared the flag. The next reconciliation must clear it.
+  it('clears a stale off-schedule flag on a renewed instance back on the grid', async () => {
+    const { holdingId, instanceId } = await policyDueSoon('Early renewal, stale flag')
+    expect((await markRenewed(instanceId)).ok).toBe(true)
+
+    const { data: flagged, error } = await admin
+      .from('due_instances')
+      .update({ off_schedule: true })
+      .eq('id', instanceId)
+      .select('id')
+    if (error) throw new Error(`fixture update failed: ${error.message}`)
+    expect(flagged).toHaveLength(1)
+
+    await reconcileDueInstances(admin, holdingId, through)
+
+    const instance = await instanceOn(holdingId, dueDate)
+    expect(instance?.off_schedule).toBe(false)
+    expect(instance?.payment_status).toBe('paid')
+  })
+
+  it('keeps the renewed instance when its tick is reset to Unknown afterwards', async () => {
+    const { holdingId, instanceId } = await policyDueSoon('Early renewal, tick reset')
+
+    expect((await markRenewed(instanceId)).ok).toBe(true)
+    expect((await setPaymentStatus(instanceId, 'unknown')).ok).toBe(true)
+
+    await reconcileDueInstances(admin, holdingId, through)
+
+    const instance = await instanceOn(holdingId, dueDate)
+    expect(instance?.id).toBe(instanceId)
+    expect(instance?.off_schedule).toBe(false)
+  })
+
+  it('keeps the instance the advisor is told to tick by hand after a partial failure', async () => {
+    const { holdingId, instanceId } = await policyDueSoon('Early renewal, tick failed')
+
+    mockCreateServerSupabase.mockImplementationOnce(async () =>
+      failSecondDueInstancesWrite(await signedInClient(EMAIL, PASSWORD)),
+    )
+    expect((await markRenewed(instanceId)).ok).toBe(false)
+
+    await reconcileDueInstances(admin, holdingId, through)
+
+    const instance = await instanceOn(holdingId, dueDate)
+    expect(instance?.id).toBe(instanceId)
+    expect(instance?.off_schedule).toBe(false)
+    // The row survives, so the Paid column the message points to is still there.
+    expect((await setPaymentStatus(instanceId, 'paid')).ok).toBe(true)
   })
 })

@@ -39,6 +39,15 @@ export async function reconcileDueInstances(
 
   const today = todayInIndia()
 
+  // On schedule means on the anchor grid, counted from today — not from
+  // next_due_date. next_due_date is where generation starts, so it never
+  // invents dates the holding has moved past, but it is the wrong bound for
+  // judging an existing row: mark-as-renewed moves next_due_date forward
+  // while the instance it just ticked is often still ahead of today, because
+  // renewing early is the normal case. That instance is a real due date of
+  // this holding. Classifying from next_due_date would flag it off-schedule
+  // for good, or delete it outright once its tick was reset to Unknown.
+  //
   // Same rule as ensureDueInstances, deliberately: no fallback from one date
   // column to the other. A holding without both dates has no schedule, so
   // nothing is "wanted" and every future instance is off-schedule by
@@ -46,12 +55,7 @@ export async function reconcileDueInstances(
   // (delete the pristine ones, keep and flag the rest).
   const wanted =
     holding.anchor_due_date && holding.next_due_date
-      ? dueDatesBetween(
-          holding.anchor_due_date,
-          holding.due_frequency,
-          holding.next_due_date,
-          through,
-        )
+      ? dueDatesBetween(holding.anchor_due_date, holding.due_frequency, today, through)
       : []
 
   // Every instance that is not past, with the one fact that decides its

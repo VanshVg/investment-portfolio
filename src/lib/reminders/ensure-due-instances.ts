@@ -41,82 +41,104 @@ export async function ensureDueInstances(
   // responsibility starts. A holding missing either has no schedule to generate.
   if (!holding.anchor_due_date || !holding.next_due_date) return NOTHING
 
+  const today = todayInIndia()
+
+  // Two windows over the same grid, deliberately different. Generation starts
+  // at next_due_date, so it never invents a date the holding has already
+  // moved past. Being on schedule means being on the grid from today: a date
+  // renewed early sits before next_due_date and is still a real due date of
+  // this holding. reconcileDueInstances classifies the same way.
   const dates = dueDatesBetween(
     holding.anchor_due_date,
     holding.due_frequency,
     holding.next_due_date,
     through,
   )
-  if (dates.length === 0) return NOTHING
+  const onSchedule = dueDatesBetween(
+    holding.anchor_due_date,
+    holding.due_frequency,
+    today,
+    through,
+  )
 
-  // Step 1 — insert what is missing. ignoreDuplicates means existing rows are
-  // left exactly as they are, which is why step 2 exists at all.
-  const { data: inserted, error: insertError } = await client
-    .from('due_instances')
-    .upsert(
-      dates.map((due_date) => ({
-        holding_id: holdingId,
-        due_date,
-        amount_due: holding.periodic_amount,
-      })),
-      { onConflict: 'holding_id,due_date', ignoreDuplicates: true },
-    )
-    .select('id')
-  if (insertError) {
-    throw new Error(`ensureDueInstances: inserting instances failed: ${insertError.message}`)
+  let created = 0
+  let refreshed = 0
+  let offScheduleCleared = 0
+
+  if (dates.length > 0) {
+    // Step 1 — insert what is missing. ignoreDuplicates means existing rows
+    // are left exactly as they are, which is why the updates below exist.
+    const { data: inserted, error: insertError } = await client
+      .from('due_instances')
+      .upsert(
+        dates.map((due_date) => ({
+          holding_id: holdingId,
+          due_date,
+          amount_due: holding.periodic_amount,
+        })),
+        { onConflict: 'holding_id,due_date', ignoreDuplicates: true },
+      )
+      .select('id')
+    if (insertError) {
+      throw new Error(`ensureDueInstances: inserting instances failed: ${insertError.message}`)
+    }
+    created = inserted?.length ?? 0
   }
 
-  const today = todayInIndia()
-
-  // Step 2a — clear off_schedule on rows whose date is back on the schedule.
-  // Unqualified by pristine-ness or by past/future: the flag only records
-  // whether the date is currently part of the schedule, and a date the
-  // advisor has ticked or annotated can still return to the schedule (that
-  // is the whole point of preserving it instead of deleting it). Scoped to
-  // currently-true rows so a steady-state run matches nothing here and
-  // doesn't churn a row version through the updated_at trigger for no reason.
-  const { data: cleared, error: clearError } = await client
-    .from('due_instances')
-    .update({ off_schedule: false })
-    .eq('holding_id', holdingId)
-    .in('due_date', dates)
-    .eq('off_schedule', true)
-    .select('id')
-  if (clearError) {
-    throw new Error(`ensureDueInstances: clearing off_schedule failed: ${clearError.message}`)
+  if (onSchedule.length > 0) {
+    // Step 2 — clear off_schedule on rows whose date is back on the schedule.
+    // Unqualified by pristine-ness: the flag only records whether the date is
+    // currently part of the schedule, and a date the advisor has ticked or
+    // annotated can still return to it (that is the whole point of preserving
+    // it instead of deleting it). Never before today, because past instances
+    // are not modified; onSchedule starts at today, and the explicit bound
+    // keeps that true if the window ever changes. Scoped to currently-true
+    // rows so a steady-state run matches nothing and doesn't churn a row
+    // version through the updated_at trigger.
+    const { data: cleared, error: clearError } = await client
+      .from('due_instances')
+      .update({ off_schedule: false })
+      .eq('holding_id', holdingId)
+      .in('due_date', onSchedule)
+      .gte('due_date', today)
+      .eq('off_schedule', true)
+      .select('id')
+    if (clearError) {
+      throw new Error(`ensureDueInstances: clearing off_schedule failed: ${clearError.message}`)
+    }
+    offScheduleCleared = cleared?.length ?? 0
   }
 
-  // Step 2b — refresh amount_due on rows that are in the current schedule,
-  // not in the past (today counts as not-past), and pristine (no payment
-  // status recorded, no note): a past instance records what was actually
-  // owed, and one the advisor has ticked or annotated is evidence. Neither
-  // may be rewritten. Also scoped to rows whose amount actually differs from
-  // the holding's current periodic_amount, so a steady-state run matches
-  // nothing and `refreshed` means "changed," not "matched." periodic_amount
-  // and amount_due are both nullable, and `neq` does not match nulls, so the
-  // two directions are handled explicitly.
-  const baseRefreshQuery = client
-    .from('due_instances')
-    .update({ amount_due: holding.periodic_amount })
-    .eq('holding_id', holdingId)
-    .in('due_date', dates)
-    .gte('due_date', today)
-    .eq('payment_status', 'unknown')
-    .is('note', null)
+  if (dates.length > 0) {
+    // Step 3 — refresh amount_due on rows that are in the generated schedule,
+    // not in the past (today counts as not-past), and pristine (no payment
+    // status recorded, no note): a past instance records what was actually
+    // owed, and one the advisor has ticked or annotated is evidence. Neither
+    // may be rewritten. Also scoped to rows whose amount actually differs from
+    // the holding's current periodic_amount, so a steady-state run matches
+    // nothing and `refreshed` means "changed," not "matched." periodic_amount
+    // and amount_due are both nullable, and `neq` does not match nulls, so the
+    // two directions are handled explicitly.
+    const baseRefreshQuery = client
+      .from('due_instances')
+      .update({ amount_due: holding.periodic_amount })
+      .eq('holding_id', holdingId)
+      .in('due_date', dates)
+      .gte('due_date', today)
+      .eq('payment_status', 'unknown')
+      .is('note', null)
 
-  const { data: refreshed, error: refreshError } =
-    holding.periodic_amount === null
-      ? await baseRefreshQuery.not('amount_due', 'is', null).select('id')
-      : await baseRefreshQuery
-          .or(`amount_due.is.null,amount_due.neq.${holding.periodic_amount}`)
-          .select('id')
-  if (refreshError) {
-    throw new Error(`ensureDueInstances: refreshing instances failed: ${refreshError.message}`)
+    const { data: refreshedRows, error: refreshError } =
+      holding.periodic_amount === null
+        ? await baseRefreshQuery.not('amount_due', 'is', null).select('id')
+        : await baseRefreshQuery
+            .or(`amount_due.is.null,amount_due.neq.${holding.periodic_amount}`)
+            .select('id')
+    if (refreshError) {
+      throw new Error(`ensureDueInstances: refreshing instances failed: ${refreshError.message}`)
+    }
+    refreshed = refreshedRows?.length ?? 0
   }
 
-  return {
-    created: inserted?.length ?? 0,
-    refreshed: refreshed?.length ?? 0,
-    offScheduleCleared: cleared?.length ?? 0,
-  }
+  return { created, refreshed, offScheduleCleared }
 }

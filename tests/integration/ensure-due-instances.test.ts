@@ -1,7 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { adminClient, ensureUser } from '../helpers/db'
 import { ensureDueInstances } from '@/lib/reminders/ensure-due-instances'
-import { todayInIndia } from '@/lib/domain/dates'
+import { addMonths } from 'date-fns'
+import { fromISODate, toISODate, todayInIndia } from '@/lib/domain/dates'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { JUST_AFTER_IST_MIDNIGHT, UTC_DATE_AT_THAT_INSTANT, onUtcHostAt } from '../helpers/clock'
 
@@ -287,6 +288,41 @@ describe('ensureDueInstances', () => {
     const result = await ensureDueInstances(admin, dueTodayHoldingId, THROUGH)
     expect(result.refreshed).toBe(1)
     expect(await amountFor(dueTodayHoldingId, TODAY)).toBe(20_000)
+  })
+
+  // Past instances are the advisor's record and are never modified. A holding
+  // whose next_due_date has slipped into the past generates past dates, and
+  // one of those already carrying the off_schedule flag must keep it.
+  it('leaves off_schedule alone on a past instance', async () => {
+    const pastDue = toISODate(addMonths(fromISODate(TODAY)!, -2))
+    const { data: holding, error } = await admin
+      .from('holdings')
+      .insert({
+        family_id: familyId,
+        category: 'mutual_fund',
+        label: 'Lapsed SIP with a past off-schedule row',
+        periodic_amount: 5_000,
+        anchor_due_date: pastDue,
+        next_due_date: pastDue,
+        due_frequency: 'monthly',
+      })
+      .select()
+      .single()
+    if (error) throw new Error(error.message)
+    const id = holding!.id as string
+    await ensureDueInstances(admin, id, THROUGH)
+
+    const { data: flagged, error: flagError } = await admin
+      .from('due_instances')
+      .update({ off_schedule: true })
+      .eq('holding_id', id)
+      .eq('due_date', pastDue)
+      .select('id')
+    if (flagError) throw new Error(flagError.message)
+    expect(flagged).toHaveLength(1)
+
+    await ensureDueInstances(admin, id, THROUGH)
+    expect((await instanceFor(id, pastDue)).off_schedule).toBe(true)
   })
 
   // Just after IST midnight a UTC server still reads yesterday's date. The
