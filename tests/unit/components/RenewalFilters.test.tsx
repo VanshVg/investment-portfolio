@@ -115,6 +115,25 @@ describe('parseRenewalParams', () => {
     expect(days).toBe(30)
   })
 
+  // The server that renders this page runs in UTC. Between midnight and
+  // 05:30 IST the host's own date is still yesterday, and the page must open
+  // on the advisor's today, not the server's.
+  it('opens on the Indian calendar date, not the host date, just after IST midnight', () => {
+    const hostTimeZone = process.env.TZ
+    process.env.TZ = 'UTC'
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      vi.setSystemTime(new Date('2026-09-19T19:00:00Z')) // 00:30 IST on the 20th
+      const parsed = parseRenewalParams({})
+      expect(parsed.from).toBe('2026-09-20')
+      expect(parsed.to).toBe('2026-10-20')
+    } finally {
+      vi.useRealTimers()
+      if (hostTimeZone === undefined) delete process.env.TZ
+      else process.env.TZ = hostTimeZone
+    }
+  })
+
   it('keeps an explicit, valid range rather than overriding it with the default', () => {
     const parsed = parseRenewalParams({ from: '2026-01-01', to: '2026-01-10' })
     expect(parsed.from).toBe('2026-01-01')

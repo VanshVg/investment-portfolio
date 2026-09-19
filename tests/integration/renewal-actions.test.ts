@@ -2,7 +2,8 @@ import { randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { adminClient, anonClient, ensureUser, signedInClient } from '../helpers/db'
-import { toISODate } from '@/lib/domain/dates'
+import { todayInIndia } from '@/lib/domain/dates'
+import { IST_DATE_AT_THAT_INSTANT, JUST_AFTER_IST_MIDNIGHT, onUtcHostAt } from '../helpers/clock'
 
 /**
  * Wraps a real, signed-in client so the *second* call to `.from('due_instances')`
@@ -67,7 +68,7 @@ const { setPaymentStatus, markRenewed } = await import('@/app/(app)/renewals/act
 
 const admin = adminClient()
 const fixtureFamilyIds: string[] = []
-const todayISO = toISODate(new Date())
+const todayISO = todayInIndia()
 let instanceId: string
 
 async function statusFor(id: string): Promise<string> {
@@ -170,6 +171,17 @@ describe('setPaymentStatus', () => {
     expect(result.ok).toBe(true)
     expect(await statusFor(instanceId)).toBe('paid')
     expect(await paidOnFor(instanceId)).toBe(todayISO)
+  })
+
+  // paid_on is the advisor's record of the day the money came in, and his
+  // day is the Indian one. On a UTC server a tick just after IST midnight
+  // must not be stamped with the day before.
+  it('stamps paid_on with the Indian date, not the host date, just after IST midnight', async () => {
+    const result = await onUtcHostAt(JUST_AFTER_IST_MIDNIGHT, () =>
+      setPaymentStatus(instanceId, 'paid'),
+    )
+    expect(result.ok).toBe(true)
+    expect(await paidOnFor(instanceId)).toBe(IST_DATE_AT_THAT_INSTANT)
   })
 
   it('clears the paid date when the status moves off paid', async () => {
@@ -329,6 +341,32 @@ describe('markRenewed', () => {
   it('generates the following due instance immediately', async () => {
     await markRenewed(renewedInstanceId)
     expect(await datesFor(holdingId)).toContain('2027-10-01')
+  })
+
+  it('stamps paid_on with the Indian date, not the host date, just after IST midnight', async () => {
+    const { data: holding, error: holdingError } = await admin
+      .from('holdings')
+      .insert({
+        family_id: familyId,
+        category: 'life_insurance',
+        label: 'Mark renewed IST paid_on fixture policy',
+        due_frequency: 'annual',
+        anchor_due_date: '2026-09-25',
+        next_due_date: '2026-09-25',
+      })
+      .select('id')
+      .single()
+    if (holdingError) throw new Error(`fixture holding insert failed: ${holdingError.message}`)
+    const { data: instance, error: instanceError } = await admin
+      .from('due_instances')
+      .insert({ holding_id: holding!.id, due_date: '2026-09-25' })
+      .select('id')
+      .single()
+    if (instanceError) throw new Error(`fixture due instance insert failed: ${instanceError.message}`)
+
+    const result = await onUtcHostAt(JUST_AFTER_IST_MIDNIGHT, () => markRenewed(instance!.id))
+    expect(result.ok).toBe(true)
+    expect(await paidOnFor(instance!.id)).toBe(IST_DATE_AT_THAT_INSTANT)
   })
 
   it('refuses a one_time holding, which has no next period', async () => {

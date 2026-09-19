@@ -4,7 +4,7 @@ import { createAdminSupabase } from '@/lib/supabase/admin'
 import { reconcileDueInstances } from '@/lib/reminders/reconcile'
 import { horizonFrom } from '@/lib/reminders/horizon'
 import { runReminderSweep } from '@/lib/reminders/sweep'
-import { toISODate } from '@/lib/domain/dates'
+import { todayInIndia } from '@/lib/domain/dates'
 
 // The sweep walks every holding; it must not be served from a cache.
 export const dynamic = 'force-dynamic'
@@ -32,7 +32,7 @@ export async function GET(request: Request): Promise<Response> {
   }
 
   const supabase = createAdminSupabase()
-  const today = toISODate(new Date())
+  const today = todayInIndia()
   const through = horizonFrom(today)
 
   const { data: holdings, error } = await supabase.from('holdings').select('id')

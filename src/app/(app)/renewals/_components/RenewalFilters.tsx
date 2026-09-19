@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation'
 import { addDays, endOfMonth, startOfMonth } from 'date-fns'
-import { formatDMY, parseDMY, toISODate } from '@/lib/domain/dates'
+import { formatDMY, fromISODate, parseDMY, toISODate, todayInIndia } from '@/lib/domain/dates'
 import type { RenewalFilters as RenewalFilterValues } from '@/lib/queries/renewals'
 
 export interface FilterOption {
@@ -56,13 +56,15 @@ export function RenewalFilters({
     router.push(`/renewals?${params.toString()}`)
   }
 
+  // Counted from the Indian date, matching the server's default range, so a
+  // preset and the page's own opening window never disagree about today.
   function applyPreset(days: number) {
-    const today = new Date()
+    const today = fromISODate(todayInIndia())!
     go({ from: toISODate(today), to: toISODate(addDays(today, days)) })
   }
 
   function applyThisMonth() {
-    const today = new Date()
+    const today = fromISODate(todayInIndia())!
     go({ from: toISODate(startOfMonth(today)), to: toISODate(endOfMonth(today)) })
   }
 

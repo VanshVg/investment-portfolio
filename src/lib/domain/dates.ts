@@ -9,6 +9,29 @@ export function toISODate(value: Date): string {
   return `${year}-${month}-${day}`
 }
 
+const INDIA_CALENDAR = new Intl.DateTimeFormat('en-GB', {
+  timeZone: 'Asia/Kolkata',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+})
+
+/**
+ * Today's calendar date in India, as yyyy-mm-dd.
+ *
+ * The advisor's business day is the Indian one, whatever zone the server
+ * runs in. Production runs in UTC, where the host date is still yesterday
+ * between 00:00 and 05:30 IST; reading the host clock in that window would
+ * stamp a payment a day early and treat yesterday's due date as not yet past.
+ * Every "today" that decides anything should come from here.
+ */
+export function todayInIndia(now: Date = new Date()): string {
+  const parts = INDIA_CALENDAR.formatToParts(now)
+  const part = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((p) => p.type === type)!.value
+  return `${part('year')}-${part('month')}-${part('day')}`
+}
+
 /** Parses a yyyy-mm-dd string as a local calendar day. */
 export function fromISODate(value: string): Date | null {
   const match = ISO.exec(value)

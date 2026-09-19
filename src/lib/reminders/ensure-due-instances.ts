@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/db/types.generated'
+import { todayInIndia } from '@/lib/domain/dates'
 import { dueDatesBetween } from '@/lib/domain/due-schedule'
 
 export interface EnsureResult {
@@ -65,7 +66,7 @@ export async function ensureDueInstances(
     throw new Error(`ensureDueInstances: inserting instances failed: ${insertError.message}`)
   }
 
-  const today = new Date().toISOString().slice(0, 10)
+  const today = todayInIndia()
 
   // Step 2a — clear off_schedule on rows whose date is back on the schedule.
   // Unqualified by pristine-ness or by past/future: the flag only records

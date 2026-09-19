@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { createServerSupabase } from '@/lib/supabase/server'
 import { fromEmptyWrite, fromPostgrestError, fromZodError, type ActionResult } from '@/lib/actions/result'
-import { fromISODate, toISODate } from '@/lib/domain/dates'
+import { fromISODate, toISODate, todayInIndia } from '@/lib/domain/dates'
 import { nextDueDateAfter, type DueFrequency } from '@/lib/domain/due-dates'
 import { ensureDueInstances } from '@/lib/reminders/ensure-due-instances'
 import { horizonFrom } from '@/lib/reminders/horizon'
@@ -32,7 +32,7 @@ export async function setPaymentStatus(
     .from('due_instances')
     .update({
       payment_status: parsed.data,
-      paid_on: parsed.data === 'paid' ? toISODate(new Date()) : null,
+      paid_on: parsed.data === 'paid' ? todayInIndia() : null,
     })
     .eq('id', dueInstanceId)
     .select('id')
@@ -135,7 +135,7 @@ export async function markRenewed(dueInstanceId: string): Promise<ActionResult> 
 
   const { data: ticked, error: tickError } = await supabase
     .from('due_instances')
-    .update({ payment_status: 'paid', paid_on: toISODate(new Date()) })
+    .update({ payment_status: 'paid', paid_on: todayInIndia() })
     .eq('id', dueInstanceId)
     .select('id')
   if (tickError) {
@@ -150,7 +150,7 @@ export async function markRenewed(dueInstanceId: string): Promise<ActionResult> 
   // The following due date should exist before the page re-renders, so the row
   // the advisor just cleared is replaced by the next one rather than vanishing.
   try {
-    await ensureDueInstances(supabase, holding.id, horizonFrom(toISODate(new Date())))
+    await ensureDueInstances(supabase, holding.id, horizonFrom(todayInIndia()))
   } catch (cause) {
     console.error(`due-instance refresh failed after renewing holding ${holding.id}`, cause)
   }

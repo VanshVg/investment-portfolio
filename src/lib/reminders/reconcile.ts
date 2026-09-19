@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/db/types.generated'
+import { todayInIndia } from '@/lib/domain/dates'
 import { dueDatesBetween } from '@/lib/domain/due-schedule'
 import { ensureDueInstances } from './ensure-due-instances'
 
@@ -36,7 +37,7 @@ export async function reconcileDueInstances(
   if (error) throw new Error(`reconcileDueInstances: reading holding failed: ${error.message}`)
   if (!holding) return NOTHING
 
-  const today = new Date().toISOString().slice(0, 10)
+  const today = todayInIndia()
 
   // Same rule as ensureDueInstances, deliberately: no fallback from one date
   // column to the other. A holding without both dates has no schedule, so

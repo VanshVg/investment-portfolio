@@ -1,5 +1,5 @@
 import { addDays } from 'date-fns'
-import { fromISODate, toISODate } from '@/lib/domain/dates'
+import { fromISODate, toISODate, todayInIndia } from '@/lib/domain/dates'
 import type { RenewalFilters as RenewalFilterValues } from '@/lib/queries/renewals'
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
@@ -8,9 +8,13 @@ function isIsoDate(value: string | undefined): value is string {
   return typeof value === 'string' && ISO_DATE.test(value) && fromISODate(value) !== null
 }
 
-/** The page opens on the next 30 days, so there is always something actionable on it. */
-export function defaultRange(today: Date = new Date()): { from: string; to: string } {
-  return { from: toISODate(today), to: toISODate(addDays(today, 30)) }
+/**
+ * The page opens on the next 30 days, so there is always something actionable
+ * on it. Counted from the Indian date, not the server's: the page is rendered
+ * on a UTC host, which is still on yesterday until 05:30 IST.
+ */
+export function defaultRange(today: string = todayInIndia()): { from: string; to: string } {
+  return { from: today, to: toISODate(addDays(fromISODate(today)!, 30)) }
 }
 
 /**

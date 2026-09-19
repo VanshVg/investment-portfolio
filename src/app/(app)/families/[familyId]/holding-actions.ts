@@ -7,7 +7,7 @@ import { applyDueDateEdit } from '@/lib/domain/due-dates'
 import { fromPostgrestError, fromZodError, fromEmptyWrite, type ActionResult } from '@/lib/actions/result'
 import { reconcileDueInstances } from '@/lib/reminders/reconcile'
 import { horizonFrom } from '@/lib/reminders/horizon'
-import { toISODate } from '@/lib/domain/dates'
+import { todayInIndia } from '@/lib/domain/dates'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/db/types.generated'
 
@@ -24,7 +24,7 @@ async function refreshSchedule(
   holdingId: string,
 ): Promise<void> {
   try {
-    await reconcileDueInstances(supabase, holdingId, horizonFrom(toISODate(new Date())))
+    await reconcileDueInstances(supabase, holdingId, horizonFrom(todayInIndia()))
   } catch (cause) {
     console.error(`due-instance refresh failed for holding ${holdingId}`, cause)
   }

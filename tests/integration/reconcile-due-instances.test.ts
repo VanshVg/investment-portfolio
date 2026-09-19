@@ -2,7 +2,10 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { adminClient, ensureUser } from '../helpers/db'
 import { ensureDueInstances } from '@/lib/reminders/ensure-due-instances'
 import { reconcileDueInstances } from '@/lib/reminders/reconcile'
+import { addDays } from 'date-fns'
+import { fromISODate, toISODate, todayInIndia } from '@/lib/domain/dates'
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { JUST_AFTER_IST_MIDNIGHT, UTC_DATE_AT_THAT_INSTANT, onUtcHostAt } from '../helpers/clock'
 
 const EMAIL = 'reconcile-due-admin@example.test'
 const PASSWORD = 'test-password-123'
@@ -23,12 +26,8 @@ const PAST_PRISTINE_DATE = '2025-01-01'
 // Computed the same way the implementation computes "today", rather than a
 // hardcoded literal, so the boundary tests below (today vs. yesterday) can't
 // drift out of alignment with the boundary they exist to pin.
-const TODAY = new Date().toISOString().slice(0, 10)
-const YESTERDAY = (() => {
-  const d = new Date()
-  d.setDate(d.getDate() - 1)
-  return d.toISOString().slice(0, 10)
-})()
+const TODAY = todayInIndia()
+const YESTERDAY = toISODate(addDays(fromISODate(TODAY)!, -1))
 
 // Far enough beyond THROUGH that a holding rescheduled to it always has an
 // empty wanted schedule, regardless of what "today" happens to be when this
@@ -312,5 +311,31 @@ describe('reconcileDueInstances', () => {
   it('never touches a pristine instance due yesterday, since yesterday is past', async () => {
     await reconcileDueInstances(admin, dueYesterdayHoldingId, THROUGH)
     expect(await datesFor(dueYesterdayHoldingId)).toContain(YESTERDAY)
+  })
+
+  // Just after IST midnight a UTC server still reads yesterday's date. "Past"
+  // is judged by the advisor's calendar, so the instance due on the IST
+  // yesterday is past and must survive, even though the UTC date says today.
+  it('treats the IST yesterday as past on a UTC host just after IST midnight', async () => {
+    const { data: holding, error } = await admin
+      .from('holdings')
+      .insert({
+        family_id: familyId,
+        category: 'life_insurance',
+        label: 'IST boundary reconcile plan',
+        periodic_amount: 25_000,
+        anchor_due_date: UTC_DATE_AT_THAT_INSTANT,
+        next_due_date: UTC_DATE_AT_THAT_INSTANT,
+        due_frequency: 'one_time',
+      })
+      .select()
+      .single()
+    if (error) throw new Error(error.message)
+    const id = holding!.id as string
+    await ensureDueInstances(admin, id, THROUGH)
+    await rescheduleTo(id, FAR_FUTURE_ANCHOR)
+
+    await onUtcHostAt(JUST_AFTER_IST_MIDNIGHT, () => reconcileDueInstances(admin, id, THROUGH))
+    expect(await datesFor(id)).toContain(UTC_DATE_AT_THAT_INSTANT)
   })
 })

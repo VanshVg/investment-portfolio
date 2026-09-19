@@ -1,7 +1,9 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { adminClient, ensureUser } from '../helpers/db'
 import { ensureDueInstances } from '@/lib/reminders/ensure-due-instances'
+import { todayInIndia } from '@/lib/domain/dates'
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { JUST_AFTER_IST_MIDNIGHT, UTC_DATE_AT_THAT_INSTANT, onUtcHostAt } from '../helpers/clock'
 
 const EMAIL = 'ensure-due-admin@example.test'
 const PASSWORD = 'test-password-123'
@@ -18,7 +20,7 @@ const THROUGH = '2027-10-06'
 // Computed the same way the implementation computes "today", rather than a
 // hardcoded literal, so the "due exactly today" case below can't drift out
 // of alignment with the boundary it is testing.
-const TODAY = new Date().toISOString().slice(0, 10)
+const TODAY = todayInIndia()
 
 let familyId: string
 let holdingId: string
@@ -285,6 +287,38 @@ describe('ensureDueInstances', () => {
     const result = await ensureDueInstances(admin, dueTodayHoldingId, THROUGH)
     expect(result.refreshed).toBe(1)
     expect(await amountFor(dueTodayHoldingId, TODAY)).toBe(20_000)
+  })
+
+  // Just after IST midnight a UTC server still reads yesterday's date. The
+  // instance due on that IST yesterday is past, so a premium change must not
+  // re-price it — even though the UTC date says it is due today.
+  it('treats the IST yesterday as past on a UTC host just after IST midnight', async () => {
+    const { data: holding, error } = await admin
+      .from('holdings')
+      .insert({
+        family_id: familyId,
+        category: 'life_insurance',
+        label: 'IST boundary refresh plan',
+        periodic_amount: 10_000,
+        anchor_due_date: UTC_DATE_AT_THAT_INSTANT,
+        next_due_date: UTC_DATE_AT_THAT_INSTANT,
+        due_frequency: 'annual',
+      })
+      .select()
+      .single()
+    if (error) throw new Error(error.message)
+    const id = holding!.id as string
+    await ensureDueInstances(admin, id, THROUGH)
+    expect(await amountFor(id, UTC_DATE_AT_THAT_INSTANT)).toBe(10_000)
+
+    const { error: premiumError } = await admin
+      .from('holdings')
+      .update({ periodic_amount: 20_000 })
+      .eq('id', id)
+    if (premiumError) throw new Error(premiumError.message)
+
+    await onUtcHostAt(JUST_AFTER_IST_MIDNIGHT, () => ensureDueInstances(admin, id, THROUGH))
+    expect(await amountFor(id, UTC_DATE_AT_THAT_INSTANT)).toBe(10_000)
   })
 
   it('skips a holding with no next_due_date', async () => {
