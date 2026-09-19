@@ -584,5 +584,35 @@ describe('RenewalTable', () => {
         ),
       )
     })
+
+    // A renewal whose tick fails has still moved the due date, so the refresh
+    // that follows makes this row no longer current and hides its button. The
+    // message telling the advisor to finish the tick must survive that.
+    it('keeps its error visible after the row stops being the current due date', async () => {
+      const message =
+        'The due date has moved to the next renewal, but the payment could not be marked as paid. Set it to Paid from the Paid column.'
+      const markRenewed = vi.fn(async () => ({ ok: false as const, formError: message }))
+      const setPaymentStatus = vi.fn(async () => ({ ok: true as const, id: 'x' }))
+      const current = row({ label: 'Term plan', dueDate: '2026-10-01' })
+      const { rerender } = renderTable([current], setPaymentStatus, markRenewed)
+
+      fireEvent.click(
+        screen.getByRole('button', {
+          name: 'Mark renewed for Term plan, Shah family (Ramesh Shah), due 01-10-2026',
+        }),
+      )
+      await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(message))
+
+      rerender(
+        <RenewalTable
+          rows={[{ ...current, holdingNextDueDate: '2027-10-01' }]}
+          setPaymentStatus={setPaymentStatus}
+          markRenewed={markRenewed}
+        />,
+      )
+
+      expect(screen.queryByRole('button', { name: /^Mark renewed for Term plan/ })).not.toBeInTheDocument()
+      expect(screen.getByRole('alert')).toHaveTextContent(message)
+    })
   })
 })
