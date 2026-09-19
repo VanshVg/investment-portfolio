@@ -2,11 +2,22 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { adminClient, anonClient, ensureUser, signedInClient } from '../helpers/db'
 import { applyDueDateEdit } from '@/lib/domain/due-dates'
 import { reconcileDueInstances } from '@/lib/reminders/reconcile'
+import { addDays } from 'date-fns'
+import { fromISODate, toISODate, todayInIndia } from '@/lib/domain/dates'
 
 const EMAIL = 'holding-actions@example.test'
 const PASSWORD = 'test-password-123'
 let advisorId: string
 let familyId: string
+
+// The reconcile-on-update test below deletes an old due instance because it
+// no longer sits on the holding's schedule -- but reconciliation only ever
+// touches rows at or after today, so the old date must still be there when
+// the fix runs. Derived from today, not hardcoded, so this stays true no
+// matter how long this suite goes unrun.
+const RECONCILE_TODAY = todayInIndia()
+const RECONCILE_OLD_DATE = toISODate(addDays(fromISODate(RECONCILE_TODAY)!, 10))
+const RECONCILE_NEW_DATE = toISODate(addDays(fromISODate(RECONCILE_TODAY)!, 40))
 
 const { revalidatePath, mockCreateServerSupabase } = vi.hoisted(() => ({
   revalidatePath: vi.fn(),
@@ -737,7 +748,7 @@ describe('due instance generation on the write path', () => {
       ...baseInput,
       label: 'Reconcile-on-update probe',
       dueFrequency: 'one_time',
-      nextDueDate: '2026-10-01',
+      nextDueDate: RECONCILE_OLD_DATE,
     })
     expect(created.ok).toBe(true)
     if (!created.ok) throw new Error('expected ok result')
@@ -746,13 +757,13 @@ describe('due instance generation on the write path', () => {
       ...baseInput,
       label: 'Reconcile-on-update probe',
       dueFrequency: 'one_time',
-      nextDueDate: '2026-11-01',
+      nextDueDate: RECONCILE_NEW_DATE,
     })
     expect(updated.ok).toBe(true)
 
     const dates = await datesFor(created.id)
-    expect(dates).toContain('2026-11-01')
-    expect(dates).not.toContain('2026-10-01')
+    expect(dates).toContain(RECONCILE_NEW_DATE)
+    expect(dates).not.toContain(RECONCILE_OLD_DATE)
 
     await adminClient().from('holdings').delete().eq('id', created.id)
   })
