@@ -8,9 +8,12 @@ import { FixedIncomeSection } from '@/app/(app)/families/[familyId]/_components/
 import { MembersSection } from '@/app/(app)/families/[familyId]/_components/MembersSection'
 import { FamilyHeader } from '@/app/(app)/families/[familyId]/_components/FamilyHeader'
 import { FamilyList } from '@/app/(app)/families/_components/FamilyList'
+import { ReminderRulesSection, type ReminderRuleRow } from '@/app/(app)/settings/reminders/_components/ReminderRulesSection'
+import { AdvisorMobileForm } from '@/app/(app)/settings/reminders/_components/AdvisorMobileForm'
 import { holdingDetailSchemas, holdingInput, type HoldingCategory } from '@/lib/validation/holdings'
 import { memberInput } from '@/lib/validation/members'
 import { familyInput } from '@/lib/validation/families'
+import { advisorMobileInput, reminderRuleInput } from '@/lib/validation/reminders'
 import type { ActionResult } from '@/lib/actions/result'
 
 /**
@@ -90,6 +93,10 @@ const KNOWN_UNREACHABLE = {
   // FamilyHeader, tested separately below, which is where an advisor
   // actually edits them.
   familyListCreate: ['goalHorizonYears', 'assumedCagr'],
+  // isActive is a checkbox: its value is always a real boolean supplied by
+  // the browser, so z.boolean() can never reject anything this control
+  // actually produces.
+  reminderRule: ['isActive'],
 }
 
 function without(all: string[], excluded: string[]): string[] {
@@ -113,6 +120,11 @@ function baseHoldingFields(category: HoldingCategory): string[] {
 
 const memberFields = without(Object.keys(memberInput.shape), KNOWN_UNREACHABLE.member)
 const familyFields = without(Object.keys(familyInput.shape), KNOWN_UNREACHABLE.family)
+const reminderRuleFields = without(
+  Object.keys(reminderRuleInput.shape),
+  KNOWN_UNREACHABLE.reminderRule,
+)
+const advisorMobileFields = Object.keys(advisorMobileInput.shape)
 
 function errorsFor(keys: string[]): Record<string, string> {
   const errors: Record<string, string> = {}
@@ -232,6 +244,36 @@ describe('FamilyList error slots', () => {
 
     render(<FamilyList families={[]} createFamily={createFamily} deleteFamily={ok} />)
     fireEvent.click(screen.getByRole('button', { name: '+ Add family' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    await expectEveryErrorVisible(fieldErrors)
+  })
+})
+
+describe('ReminderRulesSection error slots', () => {
+  it('shows every producible field error through the real save path', async () => {
+    const fieldErrors = errorsFor(reminderRuleFields)
+    const updateReminderRule = async () => ({ ok: false as const, fieldErrors })
+    const rule: ReminderRuleRow = {
+      id: 'r1',
+      category: 'life_insurance',
+      daysBefore: [30, 15],
+      isActive: true,
+    }
+
+    render(<ReminderRulesSection rules={[rule]} updateReminderRule={updateReminderRule} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    await expectEveryErrorVisible(fieldErrors)
+  })
+})
+
+describe('AdvisorMobileForm error slots', () => {
+  it('shows every producible field error through the real save path', async () => {
+    const fieldErrors = errorsFor(advisorMobileFields)
+    const updateAdvisorMobile = async () => ({ ok: false as const, fieldErrors })
+
+    render(<AdvisorMobileForm mobile={null} updateAdvisorMobile={updateAdvisorMobile} />)
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
 
     await expectEveryErrorVisible(fieldErrors)

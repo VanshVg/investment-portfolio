@@ -3,9 +3,12 @@ import { Logo } from '@/components/ui/Logo'
 import { createServerSupabase } from '@/lib/supabase/server'
 import { signOut } from './actions'
 
-// The application's primary navigation. Adding a section later (Settings is
-// next) is a one-line addition here, not a rework of the header markup.
-const NAV_ITEMS: { href: string; label: string }[] = [{ href: '/renewals', label: 'Renewals' }]
+// The application's primary navigation. Built as a list so adding a section
+// is a one-line addition here, not a rework of the header markup.
+const NAV_ITEMS: { href: string; label: string }[] = [
+  { href: '/renewals', label: 'Renewals' },
+  { href: '/settings/reminders', label: 'Settings' },
+]
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createServerSupabase()
