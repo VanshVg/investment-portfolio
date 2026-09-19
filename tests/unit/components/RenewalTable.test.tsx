@@ -25,17 +25,22 @@ function row(overrides: Partial<RenewalRow> = {}): RenewalRow {
   }
 }
 
+type ActionResult = { ok: true; id: string } | { ok: false; formError?: string }
+
 function renderTable(
   rows: RenewalRow[],
   setPaymentStatus: (
     dueInstanceId: string,
     status: RenewalRow['paymentStatus'],
-  ) => Promise<{ ok: true; id: string } | { ok: false; formError?: string }> = vi.fn(async () => ({
+  ) => Promise<ActionResult> = vi.fn(async () => ({ ok: true, id: 'x' })),
+  markRenewed: (dueInstanceId: string) => Promise<ActionResult> = vi.fn(async () => ({
     ok: true,
     id: 'x',
   })),
 ) {
-  return render(<RenewalTable rows={rows} setPaymentStatus={setPaymentStatus} />)
+  return render(
+    <RenewalTable rows={rows} setPaymentStatus={setPaymentStatus} markRenewed={markRenewed} />,
+  )
 }
 
 describe('RenewalTable', () => {
@@ -112,33 +117,87 @@ describe('RenewalTable', () => {
   })
 
   describe('payment status control', () => {
-    it('names the control with the holding label and due date, not a bare "Payment status"', () => {
+    it('names the control with the holding, family, member and due date, not a bare "Payment status"', () => {
       renderTable([row({ label: 'Term plan', dueDate: '2026-10-01' })])
       expect(
-        screen.getByRole('combobox', { name: 'Payment status for Term plan, due 01-10-2026' }),
+        screen.getByRole('combobox', {
+          name: 'Payment status for Term plan, Shah family (Ramesh Shah), due 01-10-2026',
+        }),
       ).toBeInTheDocument()
     })
 
     // The scoping requirement in full: a recurring holding produces more than
     // one row with the same label, so the label alone is not enough to tell
-    // two rows' controls apart — only the label plus the due date is.
+    // two rows' controls apart — only the full description including the due
+    // date is. (Cross-family and cross-member collisions are covered above.)
     it('gives two rows sharing a label but different due dates two distinct accessible names', () => {
       renderTable([
         row({ dueInstanceId: 'a', label: 'LIC Jeevan Umang', dueDate: '2026-10-01' }),
         row({ dueInstanceId: 'b', label: 'LIC Jeevan Umang', dueDate: '2027-10-01' }),
       ])
       expect(
-        screen.getByRole('combobox', { name: 'Payment status for LIC Jeevan Umang, due 01-10-2026' }),
+        screen.getByRole('combobox', {
+          name: 'Payment status for LIC Jeevan Umang, Shah family (Ramesh Shah), due 01-10-2026',
+        }),
       ).toBeInTheDocument()
       expect(
-        screen.getByRole('combobox', { name: 'Payment status for LIC Jeevan Umang, due 01-10-2027' }),
+        screen.getByRole('combobox', {
+          name: 'Payment status for LIC Jeevan Umang, Shah family (Ramesh Shah), due 01-10-2027',
+        }),
+      ).toBeInTheDocument()
+    })
+
+    it('names a whole-family holding accordingly, not with a blank or null member', () => {
+      renderTable([row({ label: 'Family health floater', memberId: null, memberName: null })])
+      expect(
+        screen.getByRole('combobox', {
+          name: 'Payment status for Family health floater, Shah family (whole family), due 01-10-2026',
+        }),
       ).toBeInTheDocument()
     })
 
     it('reflects the row\'s starting payment status', () => {
       renderTable([row({ paymentStatus: 'paid' })])
       const select = screen.getByRole('combobox', {
-        name: 'Payment status for HDFC Life Click2Protect, due 01-10-2026',
+        name: 'Payment status for HDFC Life Click2Protect, Shah family (Ramesh Shah), due 01-10-2026',
+      }) as HTMLSelectElement
+      expect(select.value).toBe('paid')
+    })
+
+    // Regression: mark-renewed writes payment_status through a different
+    // control on the same row. Next.js's own refresh after a server action
+    // patches `rows` with the new value, but this component previously read
+    // `row.paymentStatus` only into a `useState` initializer, which React
+    // does not re-run on a later render -- so the row's own tick kept
+    // showing the value it had when this control first mounted, not the
+    // value the row now carries. This is the defect a code review caught
+    // between rounds: found only by simulating the actual re-render a
+    // server-action refresh produces, which every other test here skips by
+    // rendering once and reading straight off the initial props.
+    it('picks up a payment status written by something other than its own control, on the same rendered row', () => {
+      const testRow = row({ dueInstanceId: 'instance-1', paymentStatus: 'unknown' })
+      const view = renderTable([testRow])
+
+      expect(
+        (
+          screen.getByRole('combobox', {
+            name: 'Payment status for HDFC Life Click2Protect, Shah family (Ramesh Shah), due 01-10-2026',
+          }) as HTMLSelectElement
+        ).value,
+      ).toBe('unknown')
+
+      // Same props object shape, only the server-owned field changed -- exactly
+      // what a revalidated `rows` array looks like after markRenewed runs.
+      view.rerender(
+        <RenewalTable
+          rows={[{ ...testRow, paymentStatus: 'paid' }]}
+          setPaymentStatus={vi.fn(async () => ({ ok: true as const, id: 'instance-1' }))}
+          markRenewed={vi.fn(async () => ({ ok: true as const, id: 'instance-1' }))}
+        />,
+      )
+
+      const select = screen.getByRole('combobox', {
+        name: 'Payment status for HDFC Life Click2Protect, Shah family (Ramesh Shah), due 01-10-2026',
       }) as HTMLSelectElement
       expect(select.value).toBe('paid')
     })
@@ -149,7 +208,7 @@ describe('RenewalTable', () => {
 
       fireEvent.change(
         screen.getByRole('combobox', {
-          name: 'Payment status for HDFC Life Click2Protect, due 01-10-2026',
+          name: 'Payment status for HDFC Life Click2Protect, Shah family (Ramesh Shah), due 01-10-2026',
         }),
         { target: { value: 'paid' } },
       )
@@ -168,7 +227,7 @@ describe('RenewalTable', () => {
       renderTable([row({ paymentStatus: 'unknown' })], setPaymentStatus)
 
       const select = screen.getByRole('combobox', {
-        name: 'Payment status for HDFC Life Click2Protect, due 01-10-2026',
+        name: 'Payment status for HDFC Life Click2Protect, Shah family (Ramesh Shah), due 01-10-2026',
       }) as HTMLSelectElement
 
       fireEvent.change(select, { target: { value: 'paid' } })
@@ -179,6 +238,182 @@ describe('RenewalTable', () => {
         ),
       )
       expect(select.value).toBe('unknown')
+    })
+  })
+
+  describe('accessible-name collisions across families and members (defect check)', () => {
+    // The renewals page's default view spans every family it tracks, so a
+    // holding label plus a due date is not a safe row identifier: two
+    // different families can each hold a policy with the same label due the
+    // same day. This must produce two distinct names for BOTH controls, not
+    // one name that both rows share.
+    it('gives two rows sharing a label and due date but different families distinct names, for both controls', () => {
+      renderTable([
+        row({
+          dueInstanceId: 'a',
+          label: 'LIC Jeevan Umang',
+          dueDate: '2026-10-01',
+          familyId: 'family-shah',
+          familyName: 'Shah family',
+          memberId: 'member-1',
+          memberName: 'Ramesh Shah',
+        }),
+        row({
+          dueInstanceId: 'b',
+          label: 'LIC Jeevan Umang',
+          dueDate: '2026-10-01',
+          familyId: 'family-mehta',
+          familyName: 'Mehta family',
+          memberId: 'member-2',
+          memberName: 'Sunita Mehta',
+        }),
+      ])
+
+      expect(
+        screen.getByRole('combobox', {
+          name: 'Payment status for LIC Jeevan Umang, Shah family (Ramesh Shah), due 01-10-2026',
+        }),
+      ).toBeInTheDocument()
+      expect(
+        screen.getByRole('combobox', {
+          name: 'Payment status for LIC Jeevan Umang, Mehta family (Sunita Mehta), due 01-10-2026',
+        }),
+      ).toBeInTheDocument()
+      expect(
+        screen.getByRole('button', {
+          name: 'Mark renewed for LIC Jeevan Umang, Shah family (Ramesh Shah), due 01-10-2026',
+        }),
+      ).toBeInTheDocument()
+      expect(
+        screen.getByRole('button', {
+          name: 'Mark renewed for LIC Jeevan Umang, Mehta family (Sunita Mehta), due 01-10-2026',
+        }),
+      ).toBeInTheDocument()
+    })
+
+    // Same family, same label, same date -- only the member differs. A
+    // household with two adult children each holding an identically labelled
+    // plan due the same day produces exactly this.
+    it('gives two rows sharing a family, label and due date but different members distinct names, for both controls', () => {
+      renderTable([
+        row({
+          dueInstanceId: 'a',
+          label: 'HDFC Life Click2Protect',
+          dueDate: '2026-10-01',
+          familyId: 'family-shah',
+          familyName: 'Shah family',
+          memberId: 'member-1',
+          memberName: 'Aarav Shah',
+        }),
+        row({
+          dueInstanceId: 'b',
+          label: 'HDFC Life Click2Protect',
+          dueDate: '2026-10-01',
+          familyId: 'family-shah',
+          familyName: 'Shah family',
+          memberId: 'member-2',
+          memberName: 'Diya Shah',
+        }),
+      ])
+
+      expect(
+        screen.getByRole('combobox', {
+          name: 'Payment status for HDFC Life Click2Protect, Shah family (Aarav Shah), due 01-10-2026',
+        }),
+      ).toBeInTheDocument()
+      expect(
+        screen.getByRole('combobox', {
+          name: 'Payment status for HDFC Life Click2Protect, Shah family (Diya Shah), due 01-10-2026',
+        }),
+      ).toBeInTheDocument()
+      expect(
+        screen.getByRole('button', {
+          name: 'Mark renewed for HDFC Life Click2Protect, Shah family (Aarav Shah), due 01-10-2026',
+        }),
+      ).toBeInTheDocument()
+      expect(
+        screen.getByRole('button', {
+          name: 'Mark renewed for HDFC Life Click2Protect, Shah family (Diya Shah), due 01-10-2026',
+        }),
+      ).toBeInTheDocument()
+    })
+  })
+
+  describe('mark renewed control', () => {
+    it('names the control with the holding, family, member and due date, not a bare "Mark renewed"', () => {
+      renderTable([row({ label: 'Term plan', dueDate: '2026-10-01' })])
+      expect(
+        screen.getByRole('button', {
+          name: 'Mark renewed for Term plan, Shah family (Ramesh Shah), due 01-10-2026',
+        }),
+      ).toBeInTheDocument()
+    })
+
+    it('gives two rows sharing a label but different due dates two distinct accessible names', () => {
+      renderTable([
+        row({ dueInstanceId: 'a', label: 'LIC Jeevan Umang', dueDate: '2026-10-01' }),
+        row({ dueInstanceId: 'b', label: 'LIC Jeevan Umang', dueDate: '2027-10-01' }),
+      ])
+      expect(
+        screen.getByRole('button', {
+          name: 'Mark renewed for LIC Jeevan Umang, Shah family (Ramesh Shah), due 01-10-2026',
+        }),
+      ).toBeInTheDocument()
+      expect(
+        screen.getByRole('button', {
+          name: 'Mark renewed for LIC Jeevan Umang, Shah family (Ramesh Shah), due 01-10-2027',
+        }),
+      ).toBeInTheDocument()
+    })
+
+    it('is not offered on a one_time holding, which has no next period', () => {
+      renderTable([row({ label: 'Matured FD', dueDate: '2026-10-01', dueFrequency: 'one_time' })])
+      expect(
+        screen.queryByRole('button', {
+          name: 'Mark renewed for Matured FD, Shah family (Ramesh Shah), due 01-10-2026',
+        }),
+      ).not.toBeInTheDocument()
+    })
+
+    it('calls the action with the due instance id', async () => {
+      const markRenewed = vi.fn(async () => ({ ok: true as const, id: 'instance-1' }))
+      renderTable(
+        [row({ dueInstanceId: 'instance-1', label: 'Term plan', dueDate: '2026-10-01' })],
+        undefined,
+        markRenewed,
+      )
+
+      fireEvent.click(
+        screen.getByRole('button', {
+          name: 'Mark renewed for Term plan, Shah family (Ramesh Shah), due 01-10-2026',
+        }),
+      )
+
+      await waitFor(() => expect(markRenewed).toHaveBeenCalledWith('instance-1'))
+    })
+
+    it('shows an error when the write fails', async () => {
+      const markRenewed = vi.fn(async () => ({
+        ok: false as const,
+        formError: 'This record has a single maturity date and does not renew. Record the payment instead.',
+      }))
+      renderTable(
+        [row({ label: 'Term plan', dueDate: '2026-10-01' })],
+        undefined,
+        markRenewed,
+      )
+
+      fireEvent.click(
+        screen.getByRole('button', {
+          name: 'Mark renewed for Term plan, Shah family (Ramesh Shah), due 01-10-2026',
+        }),
+      )
+
+      await waitFor(() =>
+        expect(screen.getByRole('alert')).toHaveTextContent(
+          'This record has a single maturity date and does not renew. Record the payment instead.',
+        ),
+      )
     })
   })
 })

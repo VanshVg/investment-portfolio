@@ -28,7 +28,7 @@ vi.mock('@/lib/supabase/server', () => ({
 
 mockCreateServerSupabase.mockImplementation(() => signedInClient(EMAIL, PASSWORD))
 
-const { setPaymentStatus } = await import('@/app/(app)/renewals/actions')
+const { setPaymentStatus, markRenewed } = await import('@/app/(app)/renewals/actions')
 
 const admin = adminClient()
 const fixtureFamilyIds: string[] = []
@@ -49,6 +49,35 @@ async function paidOnFor(id: string): Promise<string | null> {
   const { data, error } = await admin.from('due_instances').select('paid_on').eq('id', id).single()
   if (error) throw new Error(`fixture read failed: ${error.message}`)
   return data!.paid_on as string | null
+}
+
+async function nextDueFor(holdingId: string): Promise<string | null> {
+  const { data, error } = await admin
+    .from('holdings')
+    .select('next_due_date')
+    .eq('id', holdingId)
+    .single()
+  if (error) throw new Error(`fixture read failed: ${error.message}`)
+  return data!.next_due_date as string | null
+}
+
+async function anchorFor(holdingId: string): Promise<string | null> {
+  const { data, error } = await admin
+    .from('holdings')
+    .select('anchor_due_date')
+    .eq('id', holdingId)
+    .single()
+  if (error) throw new Error(`fixture read failed: ${error.message}`)
+  return data!.anchor_due_date as string | null
+}
+
+async function datesFor(holdingId: string): Promise<string[]> {
+  const { data, error } = await admin
+    .from('due_instances')
+    .select('due_date')
+    .eq('holding_id', holdingId)
+  if (error) throw new Error(`fixture read failed: ${error.message}`)
+  return (data ?? []).map((row) => row.due_date as string)
 }
 
 describe('setPaymentStatus', () => {
@@ -155,5 +184,119 @@ describe('setPaymentStatus', () => {
     const result = await setPaymentStatus(instanceId, 'paid')
     expect(result.ok).toBe(true)
     expect(revalidatePath).toHaveBeenCalledWith('/renewals')
+  })
+})
+
+describe('markRenewed', () => {
+  const markRenewedFamilyIds: string[] = []
+  let holdingId: string
+  let renewedInstanceId: string
+  let oneTimeHoldingId: string
+  let oneTimeInstanceId: string
+
+  beforeAll(async () => {
+    const user = await ensureUser(EMAIL, PASSWORD, 'admin')
+
+    const { data: family, error: familyError } = await admin
+      .from('families')
+      .insert({ name: 'Mark renewed fixture', owner_advisor_id: user!.id })
+      .select('id')
+      .single()
+    if (familyError) throw new Error(`fixture family insert failed: ${familyError.message}`)
+    markRenewedFamilyIds.push(family!.id)
+
+    // Anchored a year before its next occurrence, so advancing along the grid
+    // (2027-10-01) and re-anchoring to the instance's own due date
+    // (2026-10-01) land on genuinely different dates -- a test that could not
+    // tell the two behaviours apart would prove nothing.
+    const { data: holding, error: holdingError } = await admin
+      .from('holdings')
+      .insert({
+        family_id: family!.id,
+        category: 'life_insurance',
+        label: 'Mark renewed fixture policy',
+        due_frequency: 'annual',
+        anchor_due_date: '2026-10-01',
+        next_due_date: '2026-10-01',
+      })
+      .select('id')
+      .single()
+    if (holdingError) throw new Error(`fixture holding insert failed: ${holdingError.message}`)
+    holdingId = holding!.id as string
+
+    const { data: instance, error: instanceError } = await admin
+      .from('due_instances')
+      .insert({ holding_id: holdingId, due_date: '2026-10-01' })
+      .select('id')
+      .single()
+    if (instanceError) throw new Error(`fixture due instance insert failed: ${instanceError.message}`)
+    renewedInstanceId = instance!.id as string
+
+    // A matured fixed deposit: one_time holdings have no next period, so this
+    // exercises the refusal path rather than the happy path above.
+    const { data: oneTimeHolding, error: oneTimeHoldingError } = await admin
+      .from('holdings')
+      .insert({
+        family_id: family!.id,
+        category: 'fixed_income',
+        label: 'Mark renewed fixture FD',
+        due_frequency: 'one_time',
+        anchor_due_date: '2027-10-01',
+        next_due_date: '2027-10-01',
+      })
+      .select('id')
+      .single()
+    if (oneTimeHoldingError) {
+      throw new Error(`fixture one-time holding insert failed: ${oneTimeHoldingError.message}`)
+    }
+    oneTimeHoldingId = oneTimeHolding!.id as string
+
+    const { data: oneTimeInstance, error: oneTimeInstanceError } = await admin
+      .from('due_instances')
+      .insert({ holding_id: oneTimeHoldingId, due_date: '2027-10-01' })
+      .select('id')
+      .single()
+    if (oneTimeInstanceError) {
+      throw new Error(`fixture one-time due instance insert failed: ${oneTimeInstanceError.message}`)
+    }
+    oneTimeInstanceId = oneTimeInstance!.id as string
+  })
+
+  afterAll(async () => {
+    if (markRenewedFamilyIds.length === 0) return
+    const { data, error } = await admin
+      .from('families')
+      .delete()
+      .in('id', markRenewedFamilyIds)
+      .select('id')
+    if (error) throw new Error(`fixture cleanup failed: ${error.message}`)
+    if (!data || data.length !== markRenewedFamilyIds.length) {
+      throw new Error(
+        `fixture cleanup deleted ${data?.length ?? 0} of ${markRenewedFamilyIds.length} families`,
+      )
+    }
+  })
+
+  it('ticks the instance paid and advances the holding', async () => {
+    const result = await markRenewed(renewedInstanceId)
+    expect(result.ok).toBe(true)
+    expect(await statusFor(renewedInstanceId)).toBe('paid')
+    expect(await nextDueFor(holdingId)).toBe('2027-10-01')
+  })
+
+  it('leaves the anchor alone, so future dates stay on the original grid', async () => {
+    await markRenewed(renewedInstanceId)
+    expect(await anchorFor(holdingId)).toBe('2026-10-01')
+  })
+
+  it('generates the following due instance immediately', async () => {
+    await markRenewed(renewedInstanceId)
+    expect(await datesFor(holdingId)).toContain('2027-10-01')
+  })
+
+  it('refuses a one_time holding, which has no next period', async () => {
+    const result = await markRenewed(oneTimeInstanceId)
+    expect(result.ok).toBe(false)
+    expect(await nextDueFor(oneTimeHoldingId)).toBe('2027-10-01') // unchanged
   })
 })

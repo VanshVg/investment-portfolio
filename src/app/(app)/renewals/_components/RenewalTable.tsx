@@ -6,6 +6,7 @@ import { formatINR } from '@/lib/domain/money'
 import { ManagedByPill } from '@/components/ledger/ManagedByPill'
 import type { ActionResult } from '@/lib/actions/result'
 import type { RenewalRow } from '@/lib/queries/renewals'
+import { describeRenewalRow } from './renewal-row-description'
 
 const CATEGORY_LABELS: Record<RenewalRow['category'], string> = {
   life_insurance: 'Life insurance',
@@ -41,12 +42,14 @@ function firedWindowsText(windows: number[]): string {
  * modal: the ledger's inline-editing pattern already favours few clicks over
  * ceremony, and there is nothing here worth a second screen.
  *
- * The accessible name carries the holding's label and due date rather than
- * just "Payment status" — a recurring holding produces one row per
- * occurrence, so the label alone would still collide across a client's own
- * rows, and a bare "Payment status" would collide across every row in the
- * table. Substring-matching test tooling (Playwright, in the coming e2e
- * suite) needs this control addressable one row at a time.
+ * The accessible name is built from `describeRenewalRow` rather than just
+ * "Payment status" — a recurring holding produces one row per occurrence, so
+ * the label alone would still collide across a client's own rows, and this
+ * page's default view spans every family, so label-plus-date alone would
+ * still collide across two different families' rows. A bare "Payment
+ * status" would collide across every row in the table. Substring-matching
+ * test tooling (Playwright, in the coming e2e suite) needs this control
+ * addressable one row at a time.
  */
 function PaymentStatusControl({
   row,
@@ -78,7 +81,7 @@ function PaymentStatusControl({
   return (
     <div>
       <select
-        aria-label={`Payment status for ${row.label}, due ${formatDMY(row.dueDate)}`}
+        aria-label={`Payment status for ${describeRenewalRow(row)}`}
         value={status}
         disabled={pending}
         onChange={onChange}
@@ -100,16 +103,67 @@ function PaymentStatusControl({
 }
 
 /**
+ * One click for what is really one event: the advisor learns a premium was
+ * paid and the policy rolled over at the same moment (see `markRenewed`).
+ * Not offered on a `one_time` holding — a matured FD has no next period, so
+ * the caller filters those rows out before this ever renders.
+ *
+ * Named with `describeRenewalRow`, the same helper `PaymentStatusControl`
+ * uses, so the two controls on a row stay consistent with each other. Each
+ * keeps its own verb prefix ("Payment status for" / "Mark renewed for") so
+ * the two controls on one row remain distinguishable from each other, not
+ * just from every other row's.
+ */
+function MarkRenewedControl({
+  row,
+  markRenewed,
+}: {
+  row: RenewalRow
+  markRenewed: (dueInstanceId: string) => Promise<ActionResult>
+}) {
+  const [error, setError] = useState<string | null>(null)
+  const [pending, startTransition] = useTransition()
+
+  function onClick() {
+    setError(null)
+    startTransition(async () => {
+      const result = await markRenewed(row.dueInstanceId)
+      if (!result.ok) setError(result.formError ?? 'Could not save.')
+    })
+  }
+
+  return (
+    <div>
+      <button
+        type="button"
+        aria-label={`Mark renewed for ${describeRenewalRow(row)}`}
+        onClick={onClick}
+        disabled={pending}
+        className="rounded border border-line-strong px-1.5 py-1 text-[11.5px] font-medium hover:bg-paper disabled:opacity-60"
+      >
+        Mark renewed
+      </button>
+      {error && (
+        <p role="alert" className="mt-0.5 text-[11px] text-rust">
+          {error}
+        </p>
+      )}
+    </div>
+  )
+}
+
+/**
  * The daily working list: every due date in the filtered window, one row per
- * instance. The mark-renewed button is added in a later task, once the
- * action it calls exists.
+ * instance.
  */
 export function RenewalTable({
   rows,
   setPaymentStatus,
+  markRenewed,
 }: {
   rows: RenewalRow[]
   setPaymentStatus: (dueInstanceId: string, status: PaymentStatus) => Promise<ActionResult>
+  markRenewed: (dueInstanceId: string) => Promise<ActionResult>
 }) {
   return (
     <div className="overflow-x-auto rounded border border-line bg-paper-raised">
@@ -124,12 +178,13 @@ export function RenewalTable({
             <th className="px-2 py-1.5 text-right font-medium">Amount due</th>
             <th className="px-2 py-1.5 font-medium">Reminders sent</th>
             <th className="px-2 py-1.5 font-medium">Paid</th>
+            <th className="px-2 py-1.5 font-medium">Renew</th>
           </tr>
         </thead>
         <tbody>
           {rows.length === 0 && (
             <tr>
-              <td colSpan={8} className="px-2 py-4 text-center text-ink-soft">
+              <td colSpan={9} className="px-2 py-4 text-center text-ink-soft">
                 No renewals in this window.
               </td>
             </tr>
@@ -166,7 +221,23 @@ export function RenewalTable({
                 {firedWindowsText(row.firedWindows)}
               </td>
               <td className="px-2 py-1.5">
-                <PaymentStatusControl row={row} setPaymentStatus={setPaymentStatus} />
+                {/* Keyed on the server's own payment status, not just the row id, so
+                    a status written by something other than this control's own
+                    onChange -- mark-renewed, most immediately -- remounts it with
+                    a fresh initial value instead of leaving useState's original
+                    snapshot on screen. A key change here only ever follows a real
+                    status change, since the control's own optimistic path rolls
+                    a failed write back to the same value the prop already holds. */}
+                <PaymentStatusControl
+                  key={row.paymentStatus}
+                  row={row}
+                  setPaymentStatus={setPaymentStatus}
+                />
+              </td>
+              <td className="px-2 py-1.5">
+                {row.dueFrequency !== 'one_time' && (
+                  <MarkRenewedControl row={row} markRenewed={markRenewed} />
+                )}
               </td>
             </tr>
           ))}

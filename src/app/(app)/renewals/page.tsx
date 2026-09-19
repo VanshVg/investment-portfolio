@@ -5,7 +5,7 @@ import { listFamilies, listMembers } from '@/lib/queries/families'
 import { RenewalFilters } from './_components/RenewalFilters'
 import { parseRenewalParams } from './_components/renewal-params'
 import { RenewalTable } from './_components/RenewalTable'
-import { setPaymentStatus } from './actions'
+import { markRenewed, setPaymentStatus } from './actions'
 
 /** Builds a page link that preserves every other search param — a filter that
  * resets when the advisor pages through results is worse than no paging at
@@ -56,7 +56,7 @@ export default async function RenewalsPage({
       )}
 
       <div className="mt-3">
-        <RenewalTable rows={result.rows} setPaymentStatus={setPaymentStatus} />
+        <RenewalTable rows={result.rows} setPaymentStatus={setPaymentStatus} markRenewed={markRenewed} />
       </div>
 
       <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-[12.5px] text-ink-soft">
