@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { createServerSupabase } from '@/lib/supabase/server'
 import { fromEmptyWrite, fromPostgrestError, fromZodError, type ActionResult } from '@/lib/actions/result'
-import { fromISODate, toISODate, todayInIndia } from '@/lib/domain/dates'
+import { formatDMY, fromISODate, toISODate, todayInIndia } from '@/lib/domain/dates'
 import { nextDueDateAfter, type DueFrequency } from '@/lib/domain/due-dates'
 import { ensureDueInstances } from '@/lib/reminders/ensure-due-instances'
 import { horizonFrom } from '@/lib/reminders/horizon'
@@ -47,6 +47,26 @@ export async function setPaymentStatus(
 const NOT_RENEWABLE: ActionResult = {
   ok: false,
   formError: 'This record has a single maturity date and does not renew. Record the payment instead.',
+}
+
+const NO_SCHEDULE: ActionResult = {
+  ok: false,
+  formError:
+    'This record has no due-date schedule to advance. Set its due date on the family page, then renew it.',
+}
+
+function alreadyRenewed(currentDue: string): ActionResult {
+  return {
+    ok: false,
+    formError: `This due date has already been renewed; the policy is now due on ${formatDMY(currentDue)}. To record this payment, use the Paid column.`,
+  }
+}
+
+function notYetCurrent(currentDue: string): ActionResult {
+  return {
+    ok: false,
+    formError: `This policy is next due on ${formatDMY(currentDue)}. Renew that due date first.`,
+  }
 }
 
 /**
@@ -97,11 +117,26 @@ export async function markRenewed(dueInstanceId: string): Promise<ActionResult> 
   }
   if (holding.due_frequency === 'one_time') return NOT_RENEWABLE
 
-  const anchor = fromISODate(holding.anchor_due_date ?? (row.due_date as string))
-  const current = fromISODate(row.due_date as string)
-  if (!anchor || !current) return NOT_RENEWABLE
+  // No fallback to the instance's own date: a holding without an anchor has
+  // no grid to advance along, and inventing one here would disagree with the
+  // rest of the engine, which treats such a holding as having no schedule.
+  const currentDueISO = holding.next_due_date
+  const anchor = holding.anchor_due_date ? fromISODate(holding.anchor_due_date) : null
+  const currentDue = currentDueISO ? fromISODate(currentDueISO) : null
+  if (!anchor || !currentDueISO || !currentDue) return NO_SCHEDULE
 
-  const next = nextDueDateAfter(anchor, holding.due_frequency, current)
+  // Renewal advances the holding from its current due date, so only that
+  // instance can be renewed. Renewing a later one would skip the dates in
+  // between; renewing one already renewed would re-advance from a stale date
+  // or move next_due_date backwards.
+  const instanceDue = row.due_date as string
+  if (instanceDue !== currentDueISO) {
+    return instanceDue < currentDueISO
+      ? alreadyRenewed(currentDueISO)
+      : notYetCurrent(currentDueISO)
+  }
+
+  const next = nextDueDateAfter(anchor, holding.due_frequency, currentDue)
   if (!next) return NOT_RENEWABLE
 
   // Both the renewals listing and this holding's own family ledger page
@@ -121,14 +156,18 @@ export async function markRenewed(dueInstanceId: string): Promise<ActionResult> 
   // means the only reachable partial state is "rolled forward, not yet
   // ticked" -- the old instance is still visible as Unknown and the advisor
   // can set it by hand. The reverse order would leave a due date marked paid
-  // that never moved, which nothing on screen flags as wrong. Retrying is
-  // safe either way this fails: the advance recomputes the same `next` from
-  // the unchanged `due_date` and anchor, so a repeat write sets the same
-  // value again and then the tick completes.
+  // that never moved, which nothing on screen flags as wrong. Once the
+  // advance has landed this instance is no longer the current due date, so a
+  // second click is refused rather than advancing again; the tick is finished
+  // from the Paid column, as RENEWED_BUT_NOT_TICKED tells the advisor.
+  //
+  // The advance only applies while next_due_date is still the date read
+  // above, so two renewals racing on one holding cannot both advance it.
   const { data: advanced, error: advanceError } = await supabase
     .from('holdings')
     .update({ next_due_date: toISODate(next) })
     .eq('id', holding.id)
+    .eq('next_due_date', currentDueISO)
     .select('id')
   if (advanceError) return fromPostgrestError(advanceError)
   if (!advanced || advanced.length === 0) return fromEmptyWrite()

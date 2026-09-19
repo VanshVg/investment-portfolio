@@ -22,6 +22,9 @@ function row(overrides: Partial<RenewalRow> = {}): RenewalRow {
     offSchedule: false,
     firedWindows: [],
     ...overrides,
+    // Current by default: each fixture row is its holding's next due date
+    // unless a test says otherwise.
+    holdingNextDueDate: overrides.holdingNextDueDate ?? overrides.dueDate ?? '2026-10-01',
   }
 }
 
@@ -495,6 +498,41 @@ describe('RenewalTable', () => {
           name: 'Mark renewed for LIC Jeevan Umang, Shah family (Ramesh Shah), due 01-10-2027',
         }),
       ).toBeInTheDocument()
+    })
+
+    // Renewing advances the holding from its current due date, so only that
+    // row can be renewed. A later row, or one already renewed, would move the
+    // schedule to the wrong place; the payment tick still belongs on every row.
+    it("is offered only on the row for the holding's current due date, while every row keeps its payment tick", () => {
+      renderTable([
+        row({
+          dueInstanceId: 'renewed',
+          label: 'Term plan',
+          dueDate: '2026-10-01',
+          paymentStatus: 'paid',
+          holdingNextDueDate: '2027-10-01',
+        }),
+        row({
+          dueInstanceId: 'current',
+          label: 'Term plan',
+          dueDate: '2027-10-01',
+          holdingNextDueDate: '2027-10-01',
+        }),
+        row({
+          dueInstanceId: 'later',
+          label: 'Term plan',
+          dueDate: '2028-10-01',
+          holdingNextDueDate: '2027-10-01',
+        }),
+      ])
+
+      expect(screen.getAllByRole('button', { name: /^Mark renewed for Term plan/ })).toHaveLength(1)
+      expect(
+        screen.getByRole('button', {
+          name: 'Mark renewed for Term plan, Shah family (Ramesh Shah), due 01-10-2027',
+        }),
+      ).toBeInTheDocument()
+      expect(screen.getAllByRole('combobox', { name: /^Payment status for Term plan/ })).toHaveLength(3)
     })
 
     it('is not offered on a one_time holding, which has no next period', () => {

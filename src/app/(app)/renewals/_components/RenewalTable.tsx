@@ -7,6 +7,7 @@ import { ManagedByPill } from '@/components/ledger/ManagedByPill'
 import type { ActionResult } from '@/lib/actions/result'
 import type { RenewalRow } from '@/lib/queries/renewals'
 import { describeRenewalRow } from './renewal-row-description'
+import { canMarkRenewed } from './renewal-row-actions'
 
 const CATEGORY_LABELS: Record<RenewalRow['category'], string> = {
   life_insurance: 'Life insurance',
@@ -126,8 +127,15 @@ function PaymentStatusControl({
 /**
  * One click for what is really one event: the advisor learns a premium was
  * paid and the policy rolled over at the same moment (see `markRenewed`).
- * Not offered on a `one_time` holding — a matured FD has no next period, so
- * the caller filters those rows out before this ever renders.
+ * The button appears only where `canMarkRenewed` allows it: on the holding's
+ * current due date, and never on a `one_time` holding, which has no next
+ * period.
+ *
+ * The control itself stays mounted on every row, rendering only its error
+ * when the button is not offered. A renewal whose tick fails still moves the
+ * due date, and the refresh that follows makes this row no longer current;
+ * unmounting here would discard the message telling the advisor to finish
+ * the tick from the Paid column.
  *
  * Named with `describeRenewalRow`, the same helper `PaymentStatusControl`
  * uses, so the two controls on a row stay consistent with each other. Each
@@ -155,15 +163,17 @@ function MarkRenewedControl({
 
   return (
     <div>
-      <button
-        type="button"
-        aria-label={`Mark renewed for ${describeRenewalRow(row)}`}
-        onClick={onClick}
-        disabled={pending}
-        className="rounded border border-line-strong px-1.5 py-1 text-[11.5px] font-medium hover:bg-paper disabled:opacity-60"
-      >
-        Mark renewed
-      </button>
+      {canMarkRenewed(row) && (
+        <button
+          type="button"
+          aria-label={`Mark renewed for ${describeRenewalRow(row)}`}
+          onClick={onClick}
+          disabled={pending}
+          className="rounded border border-line-strong px-1.5 py-1 text-[11.5px] font-medium hover:bg-paper disabled:opacity-60"
+        >
+          Mark renewed
+        </button>
+      )}
       {error && (
         <p role="alert" className="mt-0.5 text-[11px] text-rust">
           {error}
@@ -245,9 +255,8 @@ export function RenewalTable({
                 <PaymentStatusControl row={row} setPaymentStatus={setPaymentStatus} />
               </td>
               <td className="px-2 py-1.5">
-                {row.dueFrequency !== 'one_time' && (
-                  <MarkRenewedControl row={row} markRenewed={markRenewed} />
-                )}
+                <MarkRenewedControl row={row} markRenewed={markRenewed} />
+
               </td>
             </tr>
           ))}

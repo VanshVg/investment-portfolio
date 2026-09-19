@@ -31,6 +31,11 @@ export interface RenewalRow {
    * query against the same holding just to make that decision.
    */
   dueFrequency: DueFrequency
+  /**
+   * The holding's current due date, which may differ from this instance's own
+   * `dueDate`. Only the instance on that date can be marked renewed.
+   */
+  holdingNextDueDate: string | null
   familyId: string
   familyName: string
   memberId: string | null
@@ -91,7 +96,7 @@ export async function listRenewals(
       `id, due_date, amount_due, payment_status, off_schedule,
        reminder_log ( days_before ),
        holdings!inner (
-         id, label, category, managed_by, due_frequency, member_id, family_id,
+         id, label, category, managed_by, due_frequency, next_due_date, member_id, family_id,
          families!inner ( id, name ),
          family_members ( id, name )
        )`,
@@ -129,6 +134,7 @@ export async function listRenewals(
       category: holding.category,
       managedBy: holding.managed_by,
       dueFrequency: holding.due_frequency,
+      holdingNextDueDate: (holding.next_due_date as string | null) ?? null,
       familyId: family.id,
       familyName: family.name,
       memberId: member?.id ?? null,

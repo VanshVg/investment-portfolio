@@ -2,8 +2,9 @@ import { randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { adminClient, anonClient, ensureUser, signedInClient } from '../helpers/db'
-import { addDays } from 'date-fns'
-import { fromISODate, toISODate, todayInIndia } from '@/lib/domain/dates'
+import { addDays, addYears } from 'date-fns'
+import { formatDMY, fromISODate, toISODate, todayInIndia } from '@/lib/domain/dates'
+import { listRenewals } from '@/lib/queries/renewals'
 import { ensureDueInstances } from '@/lib/reminders/ensure-due-instances'
 import { reconcileDueInstances } from '@/lib/reminders/reconcile'
 import { horizonFrom } from '@/lib/reminders/horizon'
@@ -330,6 +331,37 @@ describe('markRenewed', () => {
     }
   })
 
+  /**
+   * An annual policy whose current due date is `dueDate`, with the instance on
+   * that date. Each renewal test gets its own: once renewed, an instance is no
+   * longer the current due date and cannot be renewed again.
+   */
+  async function renewablePolicy(
+    label: string,
+    dueDate: string,
+  ): Promise<{ policyId: string; policyInstanceId: string }> {
+    const { data: holding, error: holdingError } = await admin
+      .from('holdings')
+      .insert({
+        family_id: familyId,
+        category: 'life_insurance',
+        label,
+        due_frequency: 'annual',
+        anchor_due_date: dueDate,
+        next_due_date: dueDate,
+      })
+      .select('id')
+      .single()
+    if (holdingError) throw new Error(`fixture holding insert failed: ${holdingError.message}`)
+    const { data: instance, error: instanceError } = await admin
+      .from('due_instances')
+      .insert({ holding_id: holding!.id, due_date: dueDate })
+      .select('id')
+      .single()
+    if (instanceError) throw new Error(`fixture due instance insert failed: ${instanceError.message}`)
+    return { policyId: holding!.id as string, policyInstanceId: instance!.id as string }
+  }
+
   it('ticks the instance paid and advances the holding', async () => {
     const result = await markRenewed(renewedInstanceId)
     expect(result.ok).toBe(true)
@@ -338,39 +370,23 @@ describe('markRenewed', () => {
   })
 
   it('leaves the anchor alone, so future dates stay on the original grid', async () => {
-    await markRenewed(renewedInstanceId)
-    expect(await anchorFor(holdingId)).toBe('2026-10-01')
+    const { policyId, policyInstanceId } = await renewablePolicy('Anchor fixture', '2026-10-01')
+    expect((await markRenewed(policyInstanceId)).ok).toBe(true)
+    expect(await anchorFor(policyId)).toBe('2026-10-01')
   })
 
   it('generates the following due instance immediately', async () => {
-    await markRenewed(renewedInstanceId)
-    expect(await datesFor(holdingId)).toContain('2027-10-01')
+    const { policyId, policyInstanceId } = await renewablePolicy('Generation fixture', '2026-10-01')
+    expect((await markRenewed(policyInstanceId)).ok).toBe(true)
+    expect(await datesFor(policyId)).toContain('2027-10-01')
   })
 
   it('stamps paid_on with the Indian date, not the host date, just after IST midnight', async () => {
-    const { data: holding, error: holdingError } = await admin
-      .from('holdings')
-      .insert({
-        family_id: familyId,
-        category: 'life_insurance',
-        label: 'Mark renewed IST paid_on fixture policy',
-        due_frequency: 'annual',
-        anchor_due_date: '2026-09-25',
-        next_due_date: '2026-09-25',
-      })
-      .select('id')
-      .single()
-    if (holdingError) throw new Error(`fixture holding insert failed: ${holdingError.message}`)
-    const { data: instance, error: instanceError } = await admin
-      .from('due_instances')
-      .insert({ holding_id: holding!.id, due_date: '2026-09-25' })
-      .select('id')
-      .single()
-    if (instanceError) throw new Error(`fixture due instance insert failed: ${instanceError.message}`)
+    const { policyInstanceId } = await renewablePolicy('IST paid_on fixture', '2026-09-25')
 
-    const result = await onUtcHostAt(JUST_AFTER_IST_MIDNIGHT, () => markRenewed(instance!.id))
+    const result = await onUtcHostAt(JUST_AFTER_IST_MIDNIGHT, () => markRenewed(policyInstanceId))
     expect(result.ok).toBe(true)
-    expect(await paidOnFor(instance!.id)).toBe(IST_DATE_AT_THAT_INSTANT)
+    expect(await paidOnFor(policyInstanceId)).toBe(IST_DATE_AT_THAT_INSTANT)
   })
 
   it('refuses a one_time holding, which has no next period', async () => {
@@ -384,8 +400,9 @@ describe('markRenewed', () => {
   // lives at /families/[familyId], not /families, and only a path targeting
   // this specific family actually refreshes it.
   it("revalidates the family's ledger page after a successful renewal", async () => {
+    const { policyInstanceId } = await renewablePolicy('Revalidation fixture', '2026-10-01')
     revalidatePath.mockClear()
-    const result = await markRenewed(renewedInstanceId)
+    const result = await markRenewed(policyInstanceId)
     expect(result.ok).toBe(true)
     expect(revalidatePath).toHaveBeenCalledWith(`/families/${familyId}`)
   })
@@ -471,13 +488,18 @@ describe('markRenewed partial failure (advance succeeds, tick fails)', () => {
     expect(revalidatePath).toHaveBeenCalledWith(`/families/${familyId}`)
   })
 
-  it('succeeds on retry: the advance recomputes the same date and the tick completes', async () => {
-    const result = await markRenewed(instanceId)
+  // The advance already landed, so this instance is no longer the current due
+  // date. A second click must not advance the holding again; the tick is
+  // finished from the Paid column, which is what the message says to do.
+  it('refuses a second renewal once the due date has moved, and the Paid column completes the tick', async () => {
+    const retry = await markRenewed(instanceId)
 
-    expect(result.ok).toBe(true)
+    expect(retry.ok).toBe(false)
+    if (!retry.ok) expect(retry.formError).toMatch(/Paid column/)
+    expect(await nextDueFor(holdingId)).toBe('2027-11-01')
+
+    expect((await setPaymentStatus(instanceId, 'paid')).ok).toBe(true)
     expect(await statusFor(instanceId)).toBe('paid')
-    // Unchanged from the failed attempt -- retrying re-derives the same next
-    // date from the still-unmoved anchor and due_date, it doesn't drift.
     expect(await nextDueFor(holdingId)).toBe('2027-11-01')
   })
 })
@@ -492,7 +514,7 @@ describe('markRenewed partial failure (advance succeeds, tick fails)', () => {
  * Every date is derived from today, because the behaviour depends on where
  * the instance sits relative to today.
  */
-describe('reconciliation after an early renewal', () => {
+describe('renewing from the current due date', () => {
   const earlyRenewalFamilyIds: string[] = []
   let familyId: string
   const today = todayInIndia()
@@ -623,5 +645,96 @@ describe('reconciliation after an early renewal', () => {
     expect(instance?.off_schedule).toBe(false)
     // The row survives, so the Paid column the message points to is still there.
     expect((await setPaymentStatus(instanceId, 'paid')).ok).toBe(true)
+  })
+
+  async function nextDueOf(holdingId: string): Promise<string | null> {
+    const { data, error } = await admin
+      .from('holdings')
+      .select('next_due_date')
+      .eq('id', holdingId)
+      .single()
+    if (error) throw new Error(`fixture read failed: ${error.message}`)
+    return data!.next_due_date as string | null
+  }
+
+  // Renewing a later row would jump the holding past the instances in
+  // between, which reconciliation would then treat as history.
+  it('refuses to renew a row later than the current due date, and names the current one', async () => {
+    const { holdingId } = await policyDueSoon('Renew a later row')
+    const laterDate = toISODate(addYears(fromISODate(dueDate)!, 1))
+    const later = await instanceOn(holdingId, laterDate)
+    if (!later) throw new Error('fixture later instance was not generated')
+
+    const result = await markRenewed(later.id as string)
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.formError).toContain(formatDMY(dueDate))
+    expect(await nextDueOf(holdingId)).toBe(dueDate)
+    expect((await instanceOn(holdingId, laterDate))?.payment_status).toBe('unknown')
+  })
+
+  // A second click on a row already renewed would previously advance from
+  // that row again; from an older row it moved next_due_date backwards.
+  it('refuses to renew a row already renewed, and points to the Paid column', async () => {
+    const { holdingId, instanceId } = await policyDueSoon('Renew the same row twice')
+    const nextDate = toISODate(addYears(fromISODate(dueDate)!, 1))
+
+    expect((await markRenewed(instanceId)).ok).toBe(true)
+    expect(await nextDueOf(holdingId)).toBe(nextDate)
+
+    const again = await markRenewed(instanceId)
+
+    expect(again.ok).toBe(false)
+    if (!again.ok) {
+      expect(again.formError).toMatch(/Paid column/)
+      expect(again.formError).toContain(formatDMY(nextDate))
+    }
+    expect(await nextDueOf(holdingId)).toBe(nextDate)
+  })
+
+  // A holding with no anchor has no schedule to advance along. The instance's
+  // own date is not a substitute for one.
+  it('refuses a holding with no anchor date', async () => {
+    const { data: holding, error } = await admin
+      .from('holdings')
+      .insert({
+        family_id: familyId,
+        category: 'life_insurance',
+        label: 'Unanchored policy',
+        due_frequency: 'annual',
+        anchor_due_date: null,
+        next_due_date: dueDate,
+      })
+      .select('id')
+      .single()
+    if (error) throw new Error(`fixture holding insert failed: ${error.message}`)
+    const { data: instance, error: instanceError } = await admin
+      .from('due_instances')
+      .insert({ holding_id: holding!.id, due_date: dueDate })
+      .select('id')
+      .single()
+    if (instanceError) throw new Error(`fixture due instance insert failed: ${instanceError.message}`)
+
+    const result = await markRenewed(instance!.id)
+
+    expect(result.ok).toBe(false)
+    expect(await nextDueOf(holding!.id)).toBe(dueDate)
+    expect(await statusFor(instance!.id)).toBe('unknown')
+  })
+
+  // The listing is what decides which row offers the button, so it has to
+  // carry the holding's current due date alongside each instance's own.
+  it("lists each instance with its holding's current due date", async () => {
+    const { holdingId, instanceId } = await policyDueSoon('Listing after renewal')
+    expect((await markRenewed(instanceId)).ok).toBe(true)
+    const nextDate = toISODate(addYears(fromISODate(dueDate)!, 1))
+
+    const { rows } = await listRenewals(admin, { from: today, to: through, familyId })
+    const mine = rows.filter((row) => row.holdingId === holdingId)
+
+    expect(mine.map((row) => [row.dueDate, row.holdingNextDueDate])).toEqual([
+      [dueDate, nextDate],
+      [nextDate, nextDate],
+    ])
   })
 })
