@@ -290,6 +290,37 @@ describe('ensureDueInstances', () => {
     expect(await amountFor(dueTodayHoldingId, TODAY)).toBe(20_000)
   })
 
+  // A fixed deposit has no premium, so its periodic_amount is null, yet its
+  // maturity instance may carry a real amount (entered by hand, seeded or
+  // imported). A missing premium is not an instruction to erase that amount.
+  it('never refreshes amount_due to null when the holding has no periodic amount', async () => {
+    const maturity = toISODate(addMonths(fromISODate(TODAY)!, 2))
+    const { data: holding, error } = await admin
+      .from('holdings')
+      .insert({
+        family_id: familyId,
+        category: 'fixed_income',
+        label: 'FD with no premium',
+        periodic_amount: null,
+        anchor_due_date: maturity,
+        next_due_date: maturity,
+        due_frequency: 'one_time',
+      })
+      .select()
+      .single()
+    if (error) throw new Error(error.message)
+    const id = holding!.id as string
+
+    const { error: instanceError } = await admin
+      .from('due_instances')
+      .insert({ holding_id: id, due_date: maturity, amount_due: 1_000_000 })
+    if (instanceError) throw new Error(instanceError.message)
+
+    const result = await ensureDueInstances(admin, id, THROUGH)
+    expect(result.refreshed).toBe(0)
+    expect(await amountFor(id, maturity)).toBe(1_000_000)
+  })
+
   // Past instances are the advisor's record and are never modified. A holding
   // whose next_due_date has slipped into the past generates past dates, and
   // one of those already carrying the off_schedule flag must keep it.

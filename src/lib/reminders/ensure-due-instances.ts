@@ -109,31 +109,31 @@ export async function ensureDueInstances(
     offScheduleCleared = cleared?.length ?? 0
   }
 
-  if (dates.length > 0) {
+  // A null periodic_amount means the holding has no recurring premium (a
+  // fixed deposit, say), not that every instance owes nothing. Refreshing to
+  // null would erase an amount set by hand, by the seed or by an importer, so
+  // the refresh only ever writes a real amount.
+  const periodicAmount = holding.periodic_amount
+  if (dates.length > 0 && periodicAmount !== null) {
     // Step 3 — refresh amount_due on rows that are in the generated schedule,
     // not in the past (today counts as not-past), and pristine (no payment
     // status recorded, no note): a past instance records what was actually
     // owed, and one the advisor has ticked or annotated is evidence. Neither
     // may be rewritten. Also scoped to rows whose amount actually differs from
     // the holding's current periodic_amount, so a steady-state run matches
-    // nothing and `refreshed` means "changed," not "matched." periodic_amount
-    // and amount_due are both nullable, and `neq` does not match nulls, so the
-    // two directions are handled explicitly.
-    const baseRefreshQuery = client
+    // nothing and `refreshed` means "changed," not "matched." amount_due is
+    // nullable and `neq` does not match nulls, so a null amount is matched
+    // explicitly.
+    const { data: refreshedRows, error: refreshError } = await client
       .from('due_instances')
-      .update({ amount_due: holding.periodic_amount })
+      .update({ amount_due: periodicAmount })
       .eq('holding_id', holdingId)
       .in('due_date', dates)
       .gte('due_date', today)
       .eq('payment_status', 'unknown')
       .is('note', null)
-
-    const { data: refreshedRows, error: refreshError } =
-      holding.periodic_amount === null
-        ? await baseRefreshQuery.not('amount_due', 'is', null).select('id')
-        : await baseRefreshQuery
-            .or(`amount_due.is.null,amount_due.neq.${holding.periodic_amount}`)
-            .select('id')
+      .or(`amount_due.is.null,amount_due.neq.${periodicAmount}`)
+      .select('id')
     if (refreshError) {
       throw new Error(`ensureDueInstances: refreshing instances failed: ${refreshError.message}`)
     }
