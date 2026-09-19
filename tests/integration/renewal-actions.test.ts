@@ -1,7 +1,42 @@
 import { randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+import type { SupabaseClient } from '@supabase/supabase-js'
 import { adminClient, anonClient, ensureUser, signedInClient } from '../helpers/db'
 import { toISODate } from '@/lib/domain/dates'
+
+/**
+ * Wraps a real, signed-in client so the *second* call to `.from('due_instances')`
+ * within one `markRenewed` invocation reports a write failure, while every
+ * other call reaches the real database untouched. `markRenewed` touches
+ * `due_instances` exactly twice on the happy path -- the initial read, then
+ * the tick -- so the second call is always the tick, never the read. Used to
+ * simulate the tick failing right after the advance has already succeeded,
+ * the partial-failure path Finding 1 exists to guard.
+ */
+function failSecondDueInstancesWrite(real: SupabaseClient): SupabaseClient {
+  let dueInstancesCalls = 0
+  const wrapped = Object.create(real) as SupabaseClient
+  wrapped.from = ((table: string) => {
+    if (table === 'due_instances') {
+      dueInstancesCalls += 1
+      if (dueInstancesCalls === 2) {
+        return {
+          update: () => ({
+            eq: () => ({
+              select: () =>
+                Promise.resolve({
+                  data: null,
+                  error: { code: '55000', message: 'simulated tick failure' },
+                }),
+            }),
+          }),
+        }
+      }
+    }
+    return real.from(table)
+  }) as unknown as SupabaseClient['from']
+  return wrapped
+}
 
 const EMAIL = 'renewal-actions@example.test'
 const PASSWORD = 'test-password-123'
@@ -298,5 +333,89 @@ describe('markRenewed', () => {
     const result = await markRenewed(oneTimeInstanceId)
     expect(result.ok).toBe(false)
     expect(await nextDueFor(oneTimeHoldingId)).toBe('2027-10-01') // unchanged
+  })
+})
+
+describe('markRenewed partial failure (advance succeeds, tick fails)', () => {
+  const partialFailureFamilyIds: string[] = []
+  let holdingId: string
+  let instanceId: string
+
+  beforeAll(async () => {
+    const user = await ensureUser(EMAIL, PASSWORD, 'admin')
+
+    const { data: family, error: familyError } = await admin
+      .from('families')
+      .insert({ name: 'Mark renewed partial failure fixture', owner_advisor_id: user!.id })
+      .select('id')
+      .single()
+    if (familyError) throw new Error(`fixture family insert failed: ${familyError.message}`)
+    partialFailureFamilyIds.push(family!.id)
+
+    const { data: holding, error: holdingError } = await admin
+      .from('holdings')
+      .insert({
+        family_id: family!.id,
+        category: 'life_insurance',
+        label: 'Mark renewed partial failure fixture policy',
+        due_frequency: 'annual',
+        anchor_due_date: '2026-11-01',
+        next_due_date: '2026-11-01',
+      })
+      .select('id')
+      .single()
+    if (holdingError) throw new Error(`fixture holding insert failed: ${holdingError.message}`)
+    holdingId = holding!.id as string
+
+    const { data: instance, error: instanceError } = await admin
+      .from('due_instances')
+      .insert({ holding_id: holdingId, due_date: '2026-11-01' })
+      .select('id')
+      .single()
+    if (instanceError) throw new Error(`fixture due instance insert failed: ${instanceError.message}`)
+    instanceId = instance!.id as string
+  })
+
+  afterAll(async () => {
+    if (partialFailureFamilyIds.length === 0) return
+    const { data, error } = await admin
+      .from('families')
+      .delete()
+      .in('id', partialFailureFamilyIds)
+      .select('id')
+    if (error) throw new Error(`fixture cleanup failed: ${error.message}`)
+    if (!data || data.length !== partialFailureFamilyIds.length) {
+      throw new Error(
+        `fixture cleanup deleted ${data?.length ?? 0} of ${partialFailureFamilyIds.length} families`,
+      )
+    }
+  })
+
+  it('advances the holding but leaves the instance unmarked, and reports the explanatory failure, when the tick fails after the advance succeeds', async () => {
+    mockCreateServerSupabase.mockImplementationOnce(async () =>
+      failSecondDueInstancesWrite(await signedInClient(EMAIL, PASSWORD)),
+    )
+
+    const result = await markRenewed(instanceId)
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.formError).toMatch(/renewed|due date/i)
+      expect(result.formError).toMatch(/paid/i)
+    }
+    // The advance went through even though the overall action reports failure.
+    expect(await nextDueFor(holdingId)).toBe('2027-11-01')
+    // The tick never landed -- the instance must not read as paid.
+    expect(await statusFor(instanceId)).not.toBe('paid')
+  })
+
+  it('succeeds on retry: the advance recomputes the same date and the tick completes', async () => {
+    const result = await markRenewed(instanceId)
+
+    expect(result.ok).toBe(true)
+    expect(await statusFor(instanceId)).toBe('paid')
+    // Unchanged from the failed attempt -- retrying re-derives the same next
+    // date from the still-unmoved anchor and due_date, it doesn't drift.
+    expect(await nextDueFor(holdingId)).toBe('2027-11-01')
   })
 })

@@ -202,6 +202,49 @@ describe('RenewalTable', () => {
       expect(select.value).toBe('paid')
     })
 
+    // Regression: PaymentStatusControl used to be keyed on row.paymentStatus
+    // so it would remount and pick up a server-driven change. But
+    // setPaymentStatus's own revalidatePath call refreshes every row's props
+    // from the server after ANY successful write on the page, including the
+    // advisor's own -- so that key changed, and the control remounted, right
+    // after the advisor's own click. A plain render-and-await (no rerender)
+    // can't reproduce that: nothing in this harness updates `rows` on its
+    // own, same as production, where the remount only happens once
+    // revalidatePath's refetch actually lands. The `rerender` below is that
+    // landing, simulated. useOptimistic must show the same DOM node -- and
+    // keep its focus -- straight through it.
+    it('keeps focus on the select after a successful change', async () => {
+      const setPaymentStatus = vi.fn(async () => ({ ok: true as const, id: 'instance-1' }))
+      const testRow = row({ dueInstanceId: 'instance-1', paymentStatus: 'unknown' })
+      const view = renderTable([testRow], setPaymentStatus)
+
+      const select = screen.getByRole('combobox', {
+        name: 'Payment status for HDFC Life Click2Protect, Shah family (Ramesh Shah), due 01-10-2026',
+      }) as HTMLSelectElement
+      select.focus()
+      expect(select).toHaveFocus()
+
+      fireEvent.change(select, { target: { value: 'paid' } })
+
+      await waitFor(() => expect(setPaymentStatus).toHaveBeenCalledWith('instance-1', 'paid'))
+
+      // The revalidate-driven refetch landing: same shape of props change the
+      // stale-state regression test above uses, applied to the row this
+      // control's own change just saved.
+      view.rerender(
+        <RenewalTable
+          rows={[{ ...testRow, paymentStatus: 'paid' }]}
+          setPaymentStatus={setPaymentStatus}
+          markRenewed={vi.fn(async () => ({ ok: true as const, id: 'instance-1' }))}
+        />,
+      )
+
+      // Not merely a same-looking select -- the exact DOM node must still be
+      // the focused element. A key-based remount swaps in a new node here.
+      expect(document.activeElement).toBe(select)
+      expect(select).toHaveFocus()
+    })
+
     it('calls the action with the due instance id and the newly chosen status', async () => {
       const setPaymentStatus = vi.fn(async () => ({ ok: true as const, id: 'instance-1' }))
       renderTable([row({ dueInstanceId: 'instance-1', paymentStatus: 'unknown' })], setPaymentStatus)
@@ -334,6 +377,56 @@ describe('RenewalTable', () => {
       expect(
         screen.getByRole('button', {
           name: 'Mark renewed for HDFC Life Click2Protect, Shah family (Diya Shah), due 01-10-2026',
+        }),
+      ).toBeInTheDocument()
+    })
+
+    // A whole-family holding (memberId/memberName null) and a named member's
+    // holding, same family, same label, same due date -- the "(whole
+    // family)" vs "(Ramesh Shah)" segment is the only thing that can tell
+    // these two rows' controls apart. Not covered above: every other case
+    // there pairs two named members or two families, never a null member
+    // against a named one.
+    it('gives a whole-family row and a named-member row of the same family, label and date distinct names, for both controls', () => {
+      renderTable([
+        row({
+          dueInstanceId: 'a',
+          label: 'Family health floater',
+          dueDate: '2026-10-01',
+          familyId: 'family-shah',
+          familyName: 'Shah family',
+          memberId: null,
+          memberName: null,
+        }),
+        row({
+          dueInstanceId: 'b',
+          label: 'Family health floater',
+          dueDate: '2026-10-01',
+          familyId: 'family-shah',
+          familyName: 'Shah family',
+          memberId: 'member-1',
+          memberName: 'Ramesh Shah',
+        }),
+      ])
+
+      expect(
+        screen.getByRole('combobox', {
+          name: 'Payment status for Family health floater, Shah family (whole family), due 01-10-2026',
+        }),
+      ).toBeInTheDocument()
+      expect(
+        screen.getByRole('combobox', {
+          name: 'Payment status for Family health floater, Shah family (Ramesh Shah), due 01-10-2026',
+        }),
+      ).toBeInTheDocument()
+      expect(
+        screen.getByRole('button', {
+          name: 'Mark renewed for Family health floater, Shah family (whole family), due 01-10-2026',
+        }),
+      ).toBeInTheDocument()
+      expect(
+        screen.getByRole('button', {
+          name: 'Mark renewed for Family health floater, Shah family (Ramesh Shah), due 01-10-2026',
         }),
       ).toBeInTheDocument()
     })

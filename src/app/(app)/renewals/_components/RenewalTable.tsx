@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useOptimistic, useState, useTransition } from 'react'
 import { formatDMY } from '@/lib/domain/dates'
 import { formatINR } from '@/lib/domain/money'
 import { ManagedByPill } from '@/components/ledger/ManagedByPill'
@@ -50,6 +50,19 @@ function firedWindowsText(windows: number[]): string {
  * status" would collide across every row in the table. Substring-matching
  * test tooling (Playwright, in the coming e2e suite) needs this control
  * addressable one row at a time.
+ *
+ * The displayed value is `useOptimistic` over the `row.paymentStatus` prop,
+ * not a `useState` copy of it. `row.paymentStatus` can change for a reason
+ * that has nothing to do with this control -- `markRenewed`, on the same
+ * row -- and `revalidatePath` refreshes it after *every* successful write,
+ * including this control's own. A `useState` copy needs a `key` change to
+ * pick up an externally-driven update, but that same key also fires on the
+ * control's own ordinary change and remounts the select right after the
+ * advisor clicks it, dropping keyboard focus. `useOptimistic` has no such
+ * blind spot: it shows the prop by default, shows the pending choice only
+ * while this control's own transition is in flight, and falls back to the
+ * (possibly since-changed) prop on its own once that transition ends --
+ * whether it succeeded elsewhere, failed here, or both. No remount, no key.
  */
 function PaymentStatusControl({
   row,
@@ -58,21 +71,29 @@ function PaymentStatusControl({
   row: RenewalRow
   setPaymentStatus: (dueInstanceId: string, status: PaymentStatus) => Promise<ActionResult>
 }) {
-  const [status, setStatus] = useState<PaymentStatus>(row.paymentStatus)
+  const [optimisticStatus, setOptimisticStatus] = useOptimistic(row.paymentStatus)
   const [error, setError] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
 
   function onChange(event: React.ChangeEvent<HTMLSelectElement>) {
+    // Guards against a second change landing while the first is still in
+    // flight -- deliberately not the native `disabled` attribute for this:
+    // disabling a focused form control blurs it immediately (the browser's
+    // own behaviour, not React's), and re-enabling it afterwards does not
+    // restore focus. That would silently undo the fix this control exists
+    // for on every single change, not just the mark-renewed case.
+    if (pending) return
+
     const next = event.target.value as PaymentStatus
-    const previous = status
-    setStatus(next)
     setError(null)
 
     startTransition(async () => {
+      setOptimisticStatus(next)
       const result = await setPaymentStatus(row.dueInstanceId, next)
       if (!result.ok) {
-        // Never leave the control showing a value that didn't actually save.
-        setStatus(previous)
+        // Nothing to roll back by hand -- once this transition ends,
+        // useOptimistic falls back to row.paymentStatus, which was never
+        // touched, on its own.
         setError(result.formError ?? 'Could not save.')
       }
     })
@@ -82,10 +103,10 @@ function PaymentStatusControl({
     <div>
       <select
         aria-label={`Payment status for ${describeRenewalRow(row)}`}
-        value={status}
-        disabled={pending}
+        aria-busy={pending}
+        value={optimisticStatus}
         onChange={onChange}
-        className={`rounded px-1.5 py-1 text-[11.5px] font-medium ${STATUS_STYLE[status]}`}
+        className={`rounded px-1.5 py-1 text-[11.5px] font-medium ${STATUS_STYLE[optimisticStatus]} ${pending ? 'opacity-60' : ''}`}
       >
         {(Object.keys(STATUS_LABEL) as PaymentStatus[]).map((value) => (
           <option key={value} value={value}>
@@ -221,18 +242,7 @@ export function RenewalTable({
                 {firedWindowsText(row.firedWindows)}
               </td>
               <td className="px-2 py-1.5">
-                {/* Keyed on the server's own payment status, not just the row id, so
-                    a status written by something other than this control's own
-                    onChange -- mark-renewed, most immediately -- remounts it with
-                    a fresh initial value instead of leaving useState's original
-                    snapshot on screen. A key change here only ever follows a real
-                    status change, since the control's own optimistic path rolls
-                    a failed write back to the same value the prop already holds. */}
-                <PaymentStatusControl
-                  key={row.paymentStatus}
-                  row={row}
-                  setPaymentStatus={setPaymentStatus}
-                />
+                <PaymentStatusControl row={row} setPaymentStatus={setPaymentStatus} />
               </td>
               <td className="px-2 py-1.5">
                 {row.dueFrequency !== 'one_time' && (

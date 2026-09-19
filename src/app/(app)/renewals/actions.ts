@@ -50,6 +50,19 @@ const NOT_RENEWABLE: ActionResult = {
 }
 
 /**
+ * The one partial state this action can leave behind: the holding rolled
+ * forward but the tick did not save. Named explicitly, rather than routed
+ * through `fromPostgrestError`/`fromEmptyWrite`, because a generic "could not
+ * save" would hide the fact that the renewal itself already went through and
+ * only the payment tick needs a manual retry.
+ */
+const RENEWED_BUT_NOT_TICKED: ActionResult = {
+  ok: false,
+  formError:
+    'The due date has moved to the next renewal, but the payment could not be marked as paid. Set it to Paid from the Paid column.',
+}
+
+/**
  * One action for what is really one event: the advisor learns a premium was
  * paid and the policy rolled over at the same moment.
  *
@@ -88,14 +101,16 @@ export async function markRenewed(dueInstanceId: string): Promise<ActionResult> 
   const next = nextDueDateAfter(anchor, holding.due_frequency, current)
   if (!next) return NOT_RENEWABLE
 
-  const { data: ticked, error: tickError } = await supabase
-    .from('due_instances')
-    .update({ payment_status: 'paid', paid_on: toISODate(new Date()) })
-    .eq('id', dueInstanceId)
-    .select('id')
-  if (tickError) return fromPostgrestError(tickError)
-  if (!ticked || ticked.length === 0) return fromEmptyWrite()
-
+  // Advance first, tick second. These are two writes with no shared
+  // transaction, so one of them can succeed while the other fails; this
+  // order picks which partial state that leaves behind. Advance-then-tick
+  // means the only reachable partial state is "rolled forward, not yet
+  // ticked" -- the old instance is still visible as Unknown and the advisor
+  // can set it by hand. The reverse order would leave a due date marked paid
+  // that never moved, which nothing on screen flags as wrong. Retrying is
+  // safe either way this fails: the advance recomputes the same `next` from
+  // the unchanged `due_date` and anchor, so a repeat write sets the same
+  // value again and then the tick completes.
   const { data: advanced, error: advanceError } = await supabase
     .from('holdings')
     .update({ next_due_date: toISODate(next) })
@@ -103,6 +118,14 @@ export async function markRenewed(dueInstanceId: string): Promise<ActionResult> 
     .select('id')
   if (advanceError) return fromPostgrestError(advanceError)
   if (!advanced || advanced.length === 0) return fromEmptyWrite()
+
+  const { data: ticked, error: tickError } = await supabase
+    .from('due_instances')
+    .update({ payment_status: 'paid', paid_on: toISODate(new Date()) })
+    .eq('id', dueInstanceId)
+    .select('id')
+  if (tickError) return RENEWED_BUT_NOT_TICKED
+  if (!ticked || ticked.length === 0) return RENEWED_BUT_NOT_TICKED
 
   // The following due date should exist before the page re-renders, so the row
   // the advisor just cleared is replaced by the next one rather than vanishing.
