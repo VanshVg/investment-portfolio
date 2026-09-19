@@ -79,6 +79,11 @@ export async function runReminderSweep(
     .gte('due_date', today)
     .lte('due_date', horizon)
     .eq('holdings.reminders_enabled', true)
+    // A paid instance needs no reminder, and an off-schedule one is kept only
+    // as evidence after the schedule moved; it is not a date anything is due
+    // on. Unpaid and unknown instances are exactly what reminders are for.
+    .neq('payment_status', 'paid')
+    .eq('off_schedule', false)
   if (error) throw new Error(`runReminderSweep: reading due instances failed: ${error.message}`)
 
   const result: SweepResult = { scanned: 0, queued: 0, skipped: 0, failed: 0 }

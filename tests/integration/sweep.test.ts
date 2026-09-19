@@ -462,6 +462,69 @@ describe('runReminderSweep', () => {
     expect(rows.map((r) => r.recipient_type).sort()).toEqual(['advisor', 'client'])
     expect(rows.every((r) => r.days_before === 0)).toBe(true)
   })
+
+  describe('instances that are settled or not real due dates', () => {
+    // Its own day and due date, 20 days apart, so exactly the 30-day window
+    // has fired for every fixture below and each one's outcome depends only
+    // on its own payment status or flag.
+    const DAY = '2026-06-01'
+    const DUE_DATE = '2026-06-21'
+
+    async function selfManagedInstance(
+      label: string,
+      mobile: string,
+      fields: { payment_status?: 'paid' | 'unpaid'; off_schedule?: boolean },
+    ): Promise<string> {
+      const family = await insertFamily(`Sweep fixture — ${label}`, advisorId)
+      const member = await insertMember(family, `${label} client`, mobile, true)
+      const holdingId = await insertHolding({
+        familyId: family,
+        memberId: member,
+        managedBy: 'self',
+        label,
+        remindersEnabled: true,
+      })
+      const dueInstanceId = await insertDueInstance(holdingId, DUE_DATE)
+      const { data, error } = await admin
+        .from('due_instances')
+        .update(fields)
+        .eq('id', dueInstanceId)
+        .select('id')
+      if (error) throw new Error(error.message)
+      if (!data || data.length !== 1) throw new Error(`fixture update for ${label} matched no row`)
+      return dueInstanceId
+    }
+
+    // The premium is already paid; a reminder to pay it would be wrong, and
+    // the Milestone 4 sender sends whatever this queue holds.
+    it('queues nothing for an instance already marked paid', async () => {
+      const id = await selfManagedInstance('Paid early', '+919876500011', {
+        payment_status: 'paid',
+      })
+      await runReminderSweep(admin, DAY)
+      expect(await logRowsFor(id)).toHaveLength(0)
+    })
+
+    // Kept only as evidence after the schedule moved; not a date anything is
+    // actually due on.
+    it('queues nothing for an off-schedule instance', async () => {
+      const id = await selfManagedInstance('Off schedule', '+919876500012', {
+        off_schedule: true,
+      })
+      await runReminderSweep(admin, DAY)
+      expect(await logRowsFor(id)).toHaveLength(0)
+    })
+
+    // Unpaid is exactly the case a reminder is for.
+    it('still queues for an instance marked unpaid', async () => {
+      const id = await selfManagedInstance('Marked unpaid', '+919876500013', {
+        payment_status: 'unpaid',
+      })
+      await runReminderSweep(admin, DAY)
+      const rows = await logRowsFor(id)
+      expect(rows.map((r) => r.recipient_type).sort()).toEqual(['advisor', 'client'])
+    })
+  })
 })
 
 describe('hasActiveRules', () => {
