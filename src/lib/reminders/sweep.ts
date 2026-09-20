@@ -64,8 +64,9 @@ export async function runReminderSweep(
   // only foreign key from families to profiles, so the `profiles:owner_advisor_id`
   // alias is unambiguous and PostgREST follows it without extra hinting.
   // Verified directly against the local stack before relying on it — if a
-  // later migration adds a second FK between these tables this will need the
-  // in-memory join the brief describes as a fallback.
+  // later migration adds a second FK between these tables this embed will
+  // stop resolving, and the fallback is to load advisor mobiles in one
+  // separate query keyed by owner_advisor_id and join them in memory.
   const { data: instances, error } = await client
     .from('due_instances')
     .select(

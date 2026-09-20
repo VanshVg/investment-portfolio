@@ -55,6 +55,19 @@ const NO_SCHEDULE: ActionResult = {
     'This record has no due-date schedule to advance. Set its due date on the family page, then renew it.',
 }
 
+/**
+ * Defensive only: a recurring frequency with a valid anchor is expected to
+ * always produce a next occurrence within nextDueDateAfter's own attempt
+ * bound. Kept distinct from NOT_RENEWABLE, whose message describes a
+ * one_time holding specifically, so a message never claims that of a
+ * holding this branch cannot be reached for.
+ */
+const CANNOT_ADVANCE: ActionResult = {
+  ok: false,
+  formError:
+    'This due date could not be advanced. Set the correct due date on the family page instead.',
+}
+
 function alreadyRenewed(currentDue: string): ActionResult {
   return {
     ok: false,
@@ -137,7 +150,7 @@ export async function markRenewed(dueInstanceId: string): Promise<ActionResult> 
   }
 
   const next = nextDueDateAfter(anchor, holding.due_frequency, currentDue)
-  if (!next) return NOT_RENEWABLE
+  if (!next) return CANNOT_ADVANCE
 
   // Both the renewals listing and this holding's own family ledger page
   // render this due date, and the ledger page revalidation must key off the

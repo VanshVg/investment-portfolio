@@ -49,7 +49,8 @@ export async function GET(request: Request): Promise<Response> {
       // schedule. If the nightly job ran only that, a save whose reconciliation
       // failed would leave stale dates on the renewals page until someone
       // happened to edit that holding again — possibly never. Reconciliation
-      // calls generation itself, so this costs one extra read per holding.
+      // calls generation itself, so this costs two extra reads per holding:
+      // the holding's own schedule columns, then its existing instances.
       const { created, deleted } = await reconcileDueInstances(
         supabase,
         holding.id,

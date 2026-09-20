@@ -1,12 +1,5 @@
-import { nthDueDate, type DueFrequency } from './due-dates'
+import { MONTHS_PER_STEP, nthDueDate, type DueFrequency } from './due-dates'
 import { fromISODate, toISODate } from './dates'
-
-const MONTHS_PER_STEP: Record<Exclude<DueFrequency, 'one_time'>, number> = {
-  annual: 12,
-  half_yearly: 6,
-  quarterly: 3,
-  monthly: 1,
-}
 
 /**
  * Steps of margin added on top of the window-derived walk bound below, to

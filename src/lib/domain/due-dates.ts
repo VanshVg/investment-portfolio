@@ -2,7 +2,7 @@ import { addMonths, startOfDay } from 'date-fns'
 
 export type DueFrequency = 'annual' | 'half_yearly' | 'quarterly' | 'monthly' | 'one_time'
 
-const MONTHS_PER_STEP: Record<Exclude<DueFrequency, 'one_time'>, number> = {
+export const MONTHS_PER_STEP: Record<Exclude<DueFrequency, 'one_time'>, number> = {
   annual: 12,
   half_yearly: 6,
   quarterly: 3,

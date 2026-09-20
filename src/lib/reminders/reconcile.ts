@@ -92,14 +92,18 @@ export async function reconcileDueInstances(
     if (deleteError) {
       throw new Error(`reconcileDueInstances: deleting instances failed: ${deleteError.message}`)
     }
-    // These exact ids were just read under this same client, so any count
-    // short of all of them is worth stopping for — but it does not, on its
-    // own, say why. Two distinct causes produce the identical symptom: RLS's
-    // USING clause silently kept a row instead of deleting it, or a second
-    // reconciliation of this same holding (the nightly job overlapping an
-    // advisor's save) already deleted the same rows a moment earlier. Either
-    // way, continuing would report a delete count that did not happen, so
-    // this throws rather than guesses which of the two occurred.
+    // Reading these ids and deleting them are two separate round trips, not
+    // one atomic step — a request landing in between (the advisor ticking or
+    // annotating one of these rows) can turn it non-pristine without this
+    // delete noticing, since it removes by id and does not re-check
+    // pristine-ness. That gap is accepted, not closed. What this guard
+    // catches is different: any count short of all the ids requested, which
+    // narrows to one of two causes: RLS's USING clause silently kept a row
+    // instead of deleting it, or a second reconciliation of this same
+    // holding (the nightly job overlapping an advisor's save) already
+    // deleted the same rows a moment earlier. Either way, continuing would
+    // report a delete count that did not happen, so this throws rather than
+    // guesses which of the two occurred.
     if (!removed || removed.length !== pristineIds.length) {
       throw new Error(
         `reconcileDueInstances: delete for holding ${holdingId} returned ` +

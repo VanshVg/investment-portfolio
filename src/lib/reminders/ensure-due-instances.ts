@@ -8,7 +8,7 @@ export interface EnsureResult {
   refreshed: number
   /**
    * Rows whose `off_schedule` flag was cleared because their date came back
-   * onto the schedule. Reported separately from `refreshed` since the two
+   * onto the schedule. Counted separately from `refreshed` since the two
    * updates are scoped by different rules (see below) and conflating their
    * counts would hide which kind of change actually happened on a given run.
    */
@@ -18,7 +18,11 @@ export interface EnsureResult {
 const NOTHING: EnsureResult = { created: 0, refreshed: 0, offScheduleCleared: 0 }
 
 /**
- * Makes the due instances for one holding match its schedule, up to `through`.
+ * Generates the due instances a holding's schedule calls for, up to `through`,
+ * refreshes their amounts, and clears `off_schedule` on any that have come
+ * back onto the grid. It never removes anything: an instance that has left
+ * the schedule is left exactly as it is. Deleting it, or flagging it
+ * off-schedule in the first place, is reconcileDueInstances's job.
  *
  * Idempotent: the unique constraint on (holding_id, due_date) absorbs the
  * insert, and the update touches only rows that are safe to change. Safe to run

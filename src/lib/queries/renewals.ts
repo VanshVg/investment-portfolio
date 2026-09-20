@@ -58,13 +58,13 @@ export interface RenewalListResult {
   page: number
   pageSize: number
   /**
-   * True when more due instances matched the window than were returned.
-   * PostgREST caps a response at `max_rows` (1000, both locally and on the
-   * hosted default) and returns HTTP 206 with `error: null` when it
-   * truncates — a status this client never inspects. Retained as a backstop
-   * now that the query pages properly: a page size equal to PostgREST's own
-   * cap would still truncate silently, and this is the page where that first
-   * bites.
+   * True when a page came back exactly as large as `maxRows` — a signal that
+   * the requested page size collided with PostgREST's own response cap
+   * (1000, both locally and on the hosted default), which returns HTTP 206
+   * with `error: null` when it truncates, a status this client never
+   * inspects. With the renewals page's own page size fixed well under that
+   * cap, this cannot fire from that call site today; it is a backstop for
+   * any future caller that raises `pageSize` up toward `maxRows`.
    */
   truncated: boolean
 }

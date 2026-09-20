@@ -4,8 +4,9 @@ import { fromISODate, toISODate } from '@/lib/domain/dates'
 /**
  * Long enough to cover an annual policy once with a month of slack.
  *
- * Defined once, and imported by both callers of ensureDueInstances. If the save
- * path and the daily job ever disagreed about how far ahead to generate, the
+ * Defined once, and imported by all three call sites that need a generation
+ * horizon: the holding save path, the renewal action, and the daily cron
+ * job. If they ever disagreed about how far ahead to generate, the
  * difference would appear as due dates that exist only until something else
  * touches the holding — which is precisely the kind of fault that hides.
  */
