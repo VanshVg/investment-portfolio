@@ -76,11 +76,55 @@ future instances for the old schedule are reconciled:
 A tick, a note or a sent message is evidence. A generated date is not. The
 distinction is what makes it safe to regenerate aggressively.
 
+**On schedule is decided by membership of the anchor grid between today and the
+horizon — not by being at or after `next_due_date`.** These sound like the same
+test and are not. `next_due_date` is the right lower bound for *generation*: it
+stops the routine inventing history the system was never responsible for. It is
+the wrong bound for *classifying an existing row*, because mark-as-renewed moves
+`next_due_date` forward while leaving the instance it just renewed in place —
+and renewing before the due date is the normal case, not an edge case. Judged
+against `next_due_date`, that instance falls below the bound, is absent from
+"wanted", and is not pristine (it now carries a payment status) — so the old
+rule preserved it and flagged it off-schedule permanently. Nothing ever cleared
+the flag, because the only clear was scoped to the generation window starting
+at `next_due_date`, which an early-renewed date never re-enters. Judged by grid
+membership instead — a date `dueDatesBetween(anchor, frequency, today,
+through)` actually produces — the same instance is on the grid and is left
+alone, exactly as an advisor who renewed early expects. Generation keeps using
+`next_due_date` as its lower bound; only the on/off-schedule classification, and
+the `off_schedule` clear, use the grid-from-today window.
+
 ### Decision 4. Mark-as-renewed does both things
 
-One action ticks the instance paid, stamps `paid_on`, and advances the holding's
-`next_due_date` by one period. The tick remains independently editable
+One action advances the holding's `next_due_date` by one period, then ticks the
+instance paid and stamps `paid_on`. The tick remains independently editable
 afterwards, so a mistake is corrected without un-renewing.
+
+**The action acts only on the holding's current due date — the instance whose
+`due_date` equals the holding's `next_due_date` — and refuses every other row.**
+Renewing a later row would skip the instances in between (reconciliation then
+deletes them); renewing an earlier, already-renewed row would either re-advance
+from a stale date or move `next_due_date` backwards. So the row is checked
+against the holding's own `next_due_date` before anything is written: an
+earlier row is told the policy has already moved on and to use the Paid column
+instead; a later row is told to renew the current due date first. The "mark
+renewed" button is offered only on that one row per holding; every row keeps
+its independent payment tick regardless.
+
+**Advance first, tick second — deliberately, and not the reverse.** These are
+two writes with no shared transaction, so one can succeed while the other
+fails, and this order picks which partial state that failure leaves behind.
+Advance-then-tick means the only reachable partial state is "rolled forward,
+not yet ticked": the old instance is still visible as Unknown, no longer the
+holding's current due date, and the advisor finishes it from the Paid column.
+The reverse order would leave a due date marked paid that never advanced —
+indistinguishable on screen from a holding that was never renewed at all. The
+advance itself is conditioned on `next_due_date` still equalling the value just
+read, so two renewals racing on the same holding cannot both advance it; the
+second is refused, not double-applied. Because the row that just advanced is no
+longer current, a second click (a naive "retry") is refused rather than
+repeating the write — completing the tick through the Paid column is the only
+way forward once the advance has landed.
 
 A `one_time` holding has no next period — a matured FD does not renew itself. The
 action is therefore not offered on those rows at all, rather than offered and
@@ -102,6 +146,27 @@ say why. Row volume is not the real constraint (single-digit thousands at the
 expected scale); PostgREST's 1000-row response cap is, and that is solved by
 pagination rather than by generating less.
 
+### Decision 5b. "Today" is the advisor's Indian calendar day, from one helper
+
+The advisor's business day is the Indian calendar day, not the clock of
+whichever machine happens to run the code. Every server path that needs
+"today" — due-instance generation, reconciliation, the payment tick's
+`paid_on`, mark-as-renewed's `paid_on`, the renewals page's default date
+range, and the cron route's own `today` — derives it from a single helper,
+`todayInIndia()` (`src/lib/domain/dates.ts`), rather than computing it locally.
+Functions that take `today` as an explicit parameter (`runReminderSweep`,
+`horizonFrom`) are unaffected; only the places that *derive* the value are
+required to go through the helper.
+
+This matters because hosting is UTC. `new Date().toISOString().slice(0, 10)`
+yields the UTC calendar date, and IST is five and a half hours ahead — so
+between midnight and 05:30 IST, the UTC date is still *yesterday*. A server
+computing "today" that way stamps `paid_on` a day early, and can treat an
+instance genuinely due yesterday in IST as still due today, or the reverse —
+breaking the rule that past instances are never touched. `todayInIndia()` uses
+`Intl.DateTimeFormat` with `timeZone: 'Asia/Kolkata'`, so it is correct
+regardless of the host's own timezone.
+
 ### Decision 6. Scheduled through Vercel Cron, not a database job
 
 A route handler at `/api/cron/reminders`, gated by a shared secret, using the
@@ -112,6 +177,15 @@ Chosen because the cadence and routing logic already exists as tested TypeScript
 mean reimplementing both in PL/pgSQL and maintaining two copies of rules that
 carry consent obligations.
 
+**The cron route is exempt from the session middleware's login gate.** Every
+other request in the app is redirected to `/login` if it carries no Supabase
+session, but Vercel Cron sends only an `Authorization: Bearer` header and no
+session cookie, so without an exemption the gate would redirect the request
+before the handler ever ran. The exemption is scoped to the `/api/cron/`
+prefix alone, not to `/api/` generally, so every other API route keeps the
+session gate; the cron route's own protection is the constant-time
+`CRON_SECRET` comparison inside the handler, checked before any database work.
+
 ## Data model changes
 
 One migration. Everything else already exists.
@@ -121,17 +195,21 @@ alter table public.due_instances
   add column off_schedule boolean not null default false;
 
 comment on column public.due_instances.off_schedule is
-  'Set when reconciliation preserved this instance because it carried a payment
+  'True when reconciliation preserved this instance because it carried a payment
    status, a note or a logged reminder, but its date is no longer part of the
-   holding''s schedule. Cleared if a later edit brings the date back in.';
-
-create index reminder_log_lookup_idx
-  on public.reminder_log (due_instance_id, days_before, recipient_type);
+   holding''s schedule. Cleared if a later edit brings the date back into the
+   schedule.';
 ```
 
 `off_schedule` is stored rather than derived. Deriving it would mean recomputing
 every holding's schedule on every read of the listing page, and the value only
 ever changes at reconciliation time, which is exactly where it is written.
+
+No new index. `reminder_log` already carries `reminder_log_one_send_per_window`,
+a unique constraint on `(due_instance_id, days_before, recipient_type)` from
+Milestone 1 — its backing index already covers exactly the lookup this
+migration was going to add explicitly, so a second, redundant index was
+dropped from the plan before it shipped.
 
 ## Modules
 
@@ -168,27 +246,36 @@ function ensureDueInstances(
   client: SupabaseClient<Database>,
   holdingId: string,
   through: string,
-): Promise<{ created: number; refreshed: number }>
+): Promise<{ created: number; refreshed: number; offScheduleCleared: number }>
 ```
 
-Reads the holding, computes the schedule from its `next_due_date` through
-`through`, and writes in two steps. The second
-step is not optional: an `ignoreDuplicates` upsert by definition leaves existing
-rows alone, so it can neither clear `off_schedule` nor refresh an amount.
+Reads the holding, computes two windows over the same anchor grid — one from
+`next_due_date` for generation, one from today for the `off_schedule` clear
+(Decision 3) — through `through`, and writes in three steps. Never removes a
+row; an instance that has left the schedule is left exactly as it is, and
+deleting it or flagging it off-schedule in the first place is
+`reconcileDueInstances`'s job, not this one's.
 
 1. **Insert** the dates that do not exist yet, upserting on
    `(holding_id, due_date)` with `ignoreDuplicates`, taking `amount_due` from the
    holding's current `periodic_amount`.
-2. **Update** the rows that already exist and fall in the current schedule,
-   setting `off_schedule = false` — a date that has come back into the schedule
-   is on it again — and refreshing `amount_due` on rows that are both in the
-   future and pristine.
+2. **Clear** `off_schedule` on rows whose date is back on the grid, counted
+   from today, not before today — an `ignoreDuplicates` upsert by definition
+   leaves existing rows alone, so this update is what actually lifts a stale
+   flag.
+3. **Refresh** `amount_due` on rows that are in the generated schedule, not in
+   the past, and pristine — but only when the holding's `periodic_amount` is
+   not null. A fixed-income holding has no periodic amount at all, so a null
+   `periodic_amount` means "not applicable," not "owes nothing"; refreshing to
+   null there would silently erase an amount set by hand, by the seed, or by a
+   future importer. The refresh is skipped entirely rather than ever writing
+   null over an existing amount.
 
-The amount refresh is bounded deliberately. A past instance records what was
-actually owed at the time and must never move. A future instance the advisor has
-already ticked or annotated is evidence and must not move either. A future
-pristine instance is a projection, and the current premium is a better projection
-than a stale one.
+The amount refresh is bounded deliberately beyond that. A past instance records
+what was actually owed at the time and must never move. A future instance the
+advisor has already ticked or annotated is evidence and must not move either. A
+future pristine instance is a projection, and the current premium is a better
+projection than a stale one — provided one exists to refresh to.
 
 Generation is **not** gated on `reminders_enabled`: that flag governs whether a
 reminder fires, not whether a due date exists. A holding with reminders off still
@@ -206,12 +293,21 @@ function reconcileDueInstances(
   client: SupabaseClient<Database>,
   holdingId: string,
   through: string,
-): Promise<{ deleted: number; preserved: number; created: number }>
+): Promise<{ deleted: number; preserved: number; created: number; refreshed: number }>
 ```
 
-Implements the Decision 3 table, then calls `ensureDueInstances`. "Pristine" is
+Implements the Decision 3 table, then calls `ensureDueInstances` (whose own
+`created`/`refreshed` counts are folded into the result). "Pristine" is
 determined by a single query joining `reminder_log`, not by three separate
 checks, so an instance can never be judged pristine on stale information.
+
+The read that determines pristine-ness and the delete that acts on it are two
+separate round trips, not one atomic step — a row can be edited by someone else
+in the gap between them, and the delete does not re-check pristine-ness, since
+it removes by id. Accepted, not closed: what the delete's own row-count check
+catches is a different failure (RLS silently blocking the write, or a
+concurrent reconciliation of the same holding getting there first), not that
+gap.
 
 ### `src/lib/reminders/sweep.ts`
 
@@ -226,6 +322,17 @@ For each due instance in range whose holding has `reminders_enabled`: resolve th
 rule (holding override beats category default, inactive rules ignored), call
 `firedWindows`, call `reminderRecipients`, and insert a `reminder_log` row per
 recipient per fired window with status `pending`.
+
+The sweep skips an instance whose `payment_status` is `paid`, or that is
+flagged `off_schedule` — neither is a date anything is still due on. It also
+skips an instance whose `due_date` falls strictly before its holding's
+`next_due_date`: mark-as-renewed advances only `next_due_date` and ticks the
+row it renewed rather than removing it, so if that tick is later reset to
+Unknown (or failed to save after the advance), the row looks pristine again
+even though its period has already been renewed — it belongs to a period
+already closed, whatever its current tick reads. Equality is let through
+deliberately: the holding's own current due date (`due_date === next_due_date`)
+must still fire.
 
 "In range" is `today` through `today + max(days_before)` across all active rules,
 not the full 13-month horizon. An instance further out than the widest configured
@@ -261,12 +368,16 @@ only adds and refreshes; it never removes an instance whose date has left the
 schedule. If the job ran only that, a save whose reconciliation failed would
 leave stale dates on the renewals page until someone happened to edit that
 holding again — which may be never. Since reconciliation calls generation
-itself, using it here costs one extra read per holding and is what makes the
+itself, using it here costs two extra reads per holding (the holding's own
+schedule columns, then its existing instances) and is what makes the
 self-healing claim below actually true rather than merely stated.
 
-**Mark renewed.** One server action: set the instance to `paid` with `paid_on =
-today`, advance the holding's `next_due_date` one period, then
-`ensureDueInstances` so the following date exists at once.
+**Mark renewed.** One server action, refusing every row but the holding's
+current due date: advance the holding's `next_due_date` one period, then set
+that instance to `paid` with `paid_on = today`, then `ensureDueInstances` so
+the following date exists at once. Advance before tick, not after — see
+Decision 4 — so the only partial state a failed second write can leave behind
+is "advanced, not yet ticked," recoverable from the Paid column.
 
 ## Failure behaviour
 
@@ -295,9 +406,11 @@ today`, advance the holding's `next_due_date` one period, then
 
 ### `/renewals`
 
-A table sorted by due date with sticky date separators. Columns: due date,
-family, member, holding (with category badge), managed-by pill, amount due,
-payment tick, action.
+A table sorted by due date. Columns: due date, family, member, holding (with
+category badge), managed-by pill, amount due, payment tick, action. Sticky
+date separators were the original intent but were deferred in favour of a
+plain date column (see follow-ups); the sort order and the date column still
+make the grouping readable.
 
 External holdings carry the gold/amber treatment from the existing palette —
 they are cross-sell triggers rather than servicing work, and that is the one
@@ -372,15 +485,20 @@ needed.
 
 - **T1 (pagination)** lands here. The follow-ups document records this page as
   its trigger, and building the page without it would mean rebuilding it.
-- **T5 (the `23505` mapping)** becomes reachable here: `due_instances` and
-  `reminder_log` both carry unique constraints that user action can now hit.
+- **T5 (the `23505` mapping)** — `due_instances` now has three writers
+  (`ensure-due-instances.ts`, `reconcile.ts`, `renewals/actions.ts`) and
+  `reminder_log` has one (`sweep.ts`), but every insert that could collide with
+  a unique constraint goes through `upsert(..., { ignoreDuplicates: true })`,
+  which resolves the conflict in Postgres rather than raising it. The `23505`
+  mapping is therefore still dead code, deliberately: it would only go live if
+  a future writer used a plain insert instead.
 
 Still deferred, unchanged: the RLS owner-scoping decision, member-level erasure,
 consent semantics on a number change, a retention policy, and free-text bounds.
 
 ## Testing
 
-- **Unit** — `dueDatesThrough` across all five frequencies, month-end anchors
+- **Unit** — `dueDatesBetween` across all five frequencies, month-end anchors
   (31st into February), leap years, `one_time`, and an anchor already in the past.
 - **Integration, against the local database** — `ensureDueInstances` idempotency
   (running twice creates nothing the second time); every row of the D3
