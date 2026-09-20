@@ -43,10 +43,19 @@ reasoning matters more than the conclusion.
 ### Decision 1. Due instances are real rows, not computed dates
 
 `reminder_log.due_instance_id` is a foreign key, so a reminder cannot be logged
-against a date that does not exist as a row. `due_instances.amount_due` is also
-deliberately frozen at creation — the schema comment states why: "premiums change
-between years, and the instance records what was actually owed." Computing due
-dates on the fly would lose both properties.
+against a date that does not exist as a row. `due_instances.amount_due` also
+records what was owed on a particular date rather than what a holding charges
+today — the schema comment states why: "premiums change between years, and the
+instance records what was actually owed." Computing due dates on the fly would
+lose both properties.
+
+That column's comment says the amount is "frozen at creation", which is true of
+every instance that matters and not quite true in general: a **future** instance
+the advisor has not touched is still a projection, so generation keeps its amount
+in step with the holding's current premium (see the `ensure-due-instances.ts`
+section). It freezes the moment the date passes or the instance carries evidence —
+a payment status or a note. The migration's comment predates that refinement and
+is left alone rather than rewritten, because it has already shipped.
 
 ### Decision 2. Generated on save, topped up daily
 
@@ -281,7 +290,11 @@ Generation is **not** gated on `reminders_enabled`: that flag governs whether a
 reminder fires, not whether a due date exists. A holding with reminders off still
 has due dates, and they still belong on the renewals page.
 
-Skips holdings with no `anchor_due_date`.
+Skips any holding missing either `anchor_due_date` or `next_due_date`. The anchor
+defines the grid and `next_due_date` defines where this system's responsibility
+starts, so a holding without both has no schedule to generate — and deliberately
+no fallback from one column to the other, which is the same rule
+`reconcileDueInstances` applies.
 
 `through` is always `today + 13 months`, computed from a single exported constant
 so the horizon cannot drift between the save path and the job.
