@@ -323,6 +323,40 @@ describe('RenewalTable', () => {
       )
       expect(select.value).toBe('unknown')
     })
+
+    // Regression: the error and the optimistic revert used to ride separate,
+    // differently-prioritised commits, so a rendered frame could show one
+    // without the other. Deliberately not `waitFor`/`act` here -- both flush
+    // every pending commit before returning control, which hides exactly the
+    // split this test exists to catch. A bare macrotask tick lets the two
+    // commits land (or fail to land) on their own schedule.
+    it('never shows the error while the select still shows the choice that was never saved', async () => {
+      // React's dev-only "optimistic update outside a transition" warning
+      // can fire here depending on scheduling; it's not what this test
+      // checks, so it's silenced rather than left as unrelated noise.
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+      const setPaymentStatus = vi.fn(async () => ({
+        ok: false as const,
+        formError:
+          'That record could not be saved. It may have changed or been removed — refresh and try again.',
+      }))
+      renderTable([row({ paymentStatus: 'unknown' })], setPaymentStatus)
+
+      const select = screen.getByRole('combobox', {
+        name: 'Payment status for HDFC Life Click2Protect, Shah family (Ramesh Shah), due 01-10-2026',
+      }) as HTMLSelectElement
+
+      fireEvent.change(select, { target: { value: 'paid' } })
+
+      await new Promise((resolve) => setTimeout(resolve, 0))
+
+      expect(screen.getByRole('alert')).toHaveTextContent(
+        'That record could not be saved. It may have changed or been removed — refresh and try again.',
+      )
+      expect(select.value).toBe('unknown')
+
+      consoleError.mockRestore()
+    })
   })
 
   describe('accessible-name collisions across families and members (defect check)', () => {

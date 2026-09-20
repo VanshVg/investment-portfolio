@@ -92,9 +92,14 @@ function PaymentStatusControl({
       setOptimisticStatus(next)
       const result = await setPaymentStatus(row.dueInstanceId, next)
       if (!result.ok) {
-        // Nothing to roll back by hand -- once this transition ends,
-        // useOptimistic falls back to row.paymentStatus, which was never
-        // touched, on its own.
+        // `setOptimisticStatus` always dispatches at a fixed, high priority;
+        // the plain `setError` below lands on whatever ordinary priority
+        // applies after an `await`, which is a different, lower lane with no
+        // ordering guarantee against the transition's own revert. Calling
+        // `setOptimisticStatus` again here, with the known-good value, routes
+        // the correction through that same high-priority path so it can
+        // never be the slower of the two commits.
+        setOptimisticStatus(row.paymentStatus)
         setError(result.formError ?? 'Could not save.')
       }
     })
