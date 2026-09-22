@@ -214,14 +214,24 @@ export function EditableSection<T, D>({
               return (
                 <tr key={id} className="border-b border-line last:border-0">
                   {renderRead(row)}
+                  {/* Both buttons read as plain verbs on screen and carry the
+                      row's name only in their accessible name. The name has to
+                      stay there: every row renders the same two verbs, so
+                      without it a screen reader announces a column of identical
+                      "Delete" buttons, and a test locator matches every row's
+                      at once instead of one — a bare "Delete" once matched over
+                      a thousand elements here. Keep it as aria-label rather
+                      than hidden text, which would duplicate the name already
+                      shown in the row and make it ambiguous to match. */}
                   <td className="whitespace-nowrap px-2 py-1.5 text-right">
                     {editable && (
                       <button
                         type="button"
+                        aria-label={`Edit ${label}`}
                         onClick={() => requestOpen({ kind: 'edit', row })}
                         className="underline hover:text-navy"
                       >
-                        Edit {label}
+                        Edit
                       </button>
                     )}
                     {/* Delete is offered only where its consequences can be
@@ -230,10 +240,11 @@ export function EditableSection<T, D>({
                     {deleteConfirm && (
                       <button
                         type="button"
+                        aria-label={`Delete ${label}`}
                         onClick={() => setConfirming(row)}
                         className="ml-3 underline hover:text-rust"
                       >
-                        Delete {label}
+                        Delete
                       </button>
                     )}
                   </td>
