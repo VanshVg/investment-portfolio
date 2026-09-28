@@ -8,6 +8,15 @@ const PUBLIC_PATHS = ['/login', '/auth']
  * Runs on the edge before any page renders.
  */
 export async function updateSession(request: NextRequest) {
+  // Vercel Cron calls this route with only an Authorization: Bearer header
+  // and no session cookie at all, so the session gate below would redirect
+  // it to /login before the handler ever ran. The route carries its own
+  // secret check, so it does not need a session. Scoped to this one prefix,
+  // not all of /api/, so no other route loses the session gate by accident.
+  if (request.nextUrl.pathname.startsWith('/api/cron/')) {
+    return NextResponse.next({ request })
+  }
+
   let response = NextResponse.next({ request })
 
   const supabase = createServerClient(

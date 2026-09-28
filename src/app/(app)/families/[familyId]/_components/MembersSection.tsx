@@ -1,6 +1,6 @@
 'use client'
 
-import { EditableSection } from '@/components/ledger/EditableSection'
+import { EditableSection, SNUG } from '@/components/ledger/EditableSection'
 import { FieldError, fieldErrorProps } from '@/components/ledger/FieldError'
 import { memberRelations } from '@/lib/validation/members'
 import type { Member, MemberRelation } from '@/lib/queries/families'
@@ -35,20 +35,20 @@ export function MembersSection({
       title="Family members"
       description="Everyone this household's cover and investments should track. Consent is required before any reminder goes to a client."
       columns={[
-        { key: 'name', label: 'Name', width: '30%' },
-        { key: 'relation', label: 'Relation', width: '20%' },
-        { key: 'mobile', label: 'Mobile', width: '25%' },
-        { key: 'consent', label: 'WhatsApp', width: '25%' },
+        { key: 'name', label: 'Name' },
+        { key: 'relation', label: 'Relation', width: SNUG },
+        { key: 'mobile', label: 'Mobile', width: SNUG },
+        { key: 'consent', label: 'WhatsApp', width: SNUG },
       ]}
       rows={members}
       rowKey={(row) => row.id}
       rowLabel={(row) => row.name}
       renderRead={(row) => (
         <>
-          <td className="px-2 py-1.5 font-medium">{row.name}</td>
-          <td className="px-2 py-1.5 capitalize">{row.relation}</td>
-          <td className="px-2 py-1.5 font-mono">{row.mobile ?? '—'}</td>
-          <td className="px-2 py-1.5">
+          <td className="px-3 py-2 font-medium">{row.name}</td>
+          <td className="whitespace-nowrap px-3 py-2 capitalize">{row.relation}</td>
+          <td className="whitespace-nowrap px-3 py-2 font-mono">{row.mobile ?? '—'}</td>
+          <td className="whitespace-nowrap px-3 py-2">
             {row.whatsappConsent ? (
               <span className="rounded-full bg-teal-bg px-2 py-0.5 text-[11px] text-teal">
                 Consented
@@ -61,7 +61,7 @@ export function MembersSection({
       )}
       renderEdit={(draft, set, errors) => (
         <>
-          <td className="px-2 py-1.5">
+          <td className="px-3 py-2">
             <label htmlFor="member-name" className="sr-only">
               Name
             </label>
@@ -74,7 +74,7 @@ export function MembersSection({
             />
             <FieldError id="member-name" message={errors.name} />
           </td>
-          <td className="px-2 py-1.5">
+          <td className="px-3 py-2">
             <label htmlFor="member-relation" className="sr-only">
               Relation
             </label>
@@ -91,7 +91,7 @@ export function MembersSection({
               ))}
             </select>
           </td>
-          <td className="px-2 py-1.5">
+          <td className="px-3 py-2">
             <label htmlFor="member-mobile" className="sr-only">
               Mobile
             </label>
@@ -112,7 +112,7 @@ export function MembersSection({
             />
             <FieldError id="member-mobile" message={errors.mobile} />
           </td>
-          <td className="px-2 py-1.5">
+          <td className="px-3 py-2">
             <label htmlFor="member-consent" className="flex items-center gap-1.5 text-[12px]">
               <input
                 id="member-consent"

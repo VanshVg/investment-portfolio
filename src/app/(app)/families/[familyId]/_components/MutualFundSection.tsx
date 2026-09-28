@@ -1,6 +1,6 @@
 'use client'
 
-import { EditableSection } from '@/components/ledger/EditableSection'
+import { EditableSection, SNUG } from '@/components/ledger/EditableSection'
 import { FieldError, fieldErrorProps } from '@/components/ledger/FieldError'
 import { ManagedByPill } from '@/components/ledger/ManagedByPill'
 import { MemberSelect } from '@/components/ledger/MemberSelect'
@@ -44,12 +44,12 @@ export function MutualFundSection({
       title="Mutual funds & goals"
       description="Current value against the target this investment is meant to reach."
       columns={[
-        { key: 'member', label: 'Member', width: '16%' },
-        { key: 'fund', label: 'Fund', width: '24%' },
-        { key: 'sip', label: 'Monthly SIP', width: '15%' },
-        { key: 'value', label: 'Current value', width: '15%' },
-        { key: 'goal', label: 'Target goal', width: '15%' },
-        { key: 'managed', label: 'Managed by', width: '15%' },
+        { key: 'member', label: 'Member', width: SNUG },
+        { key: 'fund', label: 'Fund' },
+        { key: 'sip', label: 'Monthly SIP', width: SNUG, align: 'right' },
+        { key: 'value', label: 'Current value', width: SNUG, align: 'right' },
+        { key: 'goal', label: 'Target goal', width: SNUG, align: 'right' },
+        { key: 'managed', label: 'Managed by', width: SNUG },
       ]}
       rows={holdings}
       rowKey={(row) => row.id}
@@ -59,12 +59,12 @@ export function MutualFundSection({
         const goal = typeof details.target_goal === 'number' ? details.target_goal : null
         return (
           <>
-            <td className="px-2 py-1.5">{nameOf(row.memberId)}</td>
-            <td className="px-2 py-1.5 font-medium">{row.label}</td>
-            <td className="px-2 py-1.5 text-right font-mono">{formatINR(row.periodicAmount)}</td>
-            <td className="px-2 py-1.5 text-right font-mono">{formatINR(row.principalAmount)}</td>
-            <td className="px-2 py-1.5 text-right font-mono">{formatINR(goal)}</td>
-            <td className="px-2 py-1.5">
+            <td className="whitespace-nowrap px-3 py-2">{nameOf(row.memberId)}</td>
+            <td className="px-3 py-2 font-medium">{row.label}</td>
+            <td className="whitespace-nowrap px-3 py-2 text-right font-mono">{formatINR(row.periodicAmount)}</td>
+            <td className="whitespace-nowrap px-3 py-2 text-right font-mono">{formatINR(row.principalAmount)}</td>
+            <td className="whitespace-nowrap px-3 py-2 text-right font-mono">{formatINR(goal)}</td>
+            <td className="whitespace-nowrap px-3 py-2">
               <ManagedByPill value={row.managedBy} />
             </td>
           </>
@@ -72,7 +72,7 @@ export function MutualFundSection({
       }}
       renderEdit={(draft, set, errors) => (
         <>
-          <td className="px-2 py-1.5">
+          <td className="px-3 py-2">
             <MemberSelect
               id="mf-member"
               label="Member"
@@ -82,7 +82,7 @@ export function MutualFundSection({
               error={errors.memberId}
             />
           </td>
-          <td className="px-2 py-1.5">
+          <td className="px-3 py-2">
             <label htmlFor="mf-label" className="sr-only">
               Fund name
             </label>
@@ -95,7 +95,7 @@ export function MutualFundSection({
             />
             <FieldError id="mf-label" message={errors.label} />
           </td>
-          <td className="px-2 py-1.5">
+          <td className="px-3 py-2">
             <MoneyInput
               id="mf-sip"
               label="Monthly SIP"
@@ -104,7 +104,7 @@ export function MutualFundSection({
               error={errors.periodicAmount}
             />
           </td>
-          <td className="px-2 py-1.5">
+          <td className="px-3 py-2">
             <MoneyInput
               id="mf-value"
               label="Current value"
@@ -113,7 +113,7 @@ export function MutualFundSection({
               error={errors.principalAmount}
             />
           </td>
-          <td className="px-2 py-1.5">
+          <td className="px-3 py-2">
             <label htmlFor="mf-goal" className="sr-only">
               Target goal
             </label>
@@ -136,7 +136,7 @@ export function MutualFundSection({
             />
             <FieldError id="mf-goal" message={detailError(errors, 'target_goal')} />
           </td>
-          <td className="px-2 py-1.5">
+          <td className="px-3 py-2">
             <label htmlFor="mf-managed" className="sr-only">
               Managed by
             </label>

@@ -1,6 +1,6 @@
 'use client'
 
-import { EditableSection } from '@/components/ledger/EditableSection'
+import { EditableSection, SNUG } from '@/components/ledger/EditableSection'
 import { FieldError, fieldErrorProps } from '@/components/ledger/FieldError'
 import { ManagedByPill } from '@/components/ledger/ManagedByPill'
 import { MemberSelect } from '@/components/ledger/MemberSelect'
@@ -45,40 +45,57 @@ export function GeneralInsuranceSection({
       title="General insurance — health & vehicle"
       description="Health floaters cover the whole household; vehicle policies usually sit with one member."
       columns={[
-        { key: 'category', label: 'Category', width: '10%' },
-        { key: 'label', label: 'Policy', width: '20%' },
-        { key: 'asset', label: 'Insured asset', width: '17%' },
-        { key: 'coverage', label: 'Coverage', width: '13%' },
-        { key: 'premium', label: 'Premium', width: '11%' },
-        { key: 'due', label: 'Due date', width: '11%' },
-        { key: 'managed', label: 'Managed by', width: '8%' },
-        { key: 'member', label: 'Member', width: '10%' },
+        { key: 'category', label: 'Category', width: SNUG },
+        // This section carries one more fact than the other three, and at the
+        // page's 980px it did not fit: the snug columns take ~710px, leaving
+        // ~230px to split between policy and insured asset when the policy
+        // name alone wants ~185px. Both wrapped to three and four lines.
+        // Insured asset now rides under the policy name instead of holding a
+        // column of its own, which is also where it reads best — it qualifies
+        // the policy rather than standing beside it.
+        { key: 'label', label: 'Policy' },
+        { key: 'coverage', label: 'Coverage', width: SNUG, align: 'right' },
+        { key: 'premium', label: 'Premium', width: SNUG, align: 'right' },
+        { key: 'due', label: 'Due date', width: SNUG },
+        { key: 'managed', label: 'Managed by', width: SNUG },
+        { key: 'member', label: 'Member', width: SNUG },
       ]}
       rows={holdings}
       rowKey={(row) => row.id}
       rowLabel={(row) => row.label}
       renderRead={(row) => {
         const details = (row.details ?? {}) as Record<string, unknown>
+        const insuredAsset = String(details.insured_asset ?? '').trim()
         return (
           <>
-            <td className="px-2 py-1.5 capitalize">{String(details.sub_category ?? '—')}</td>
-            <td className="px-2 py-1.5 font-medium">{row.label}</td>
-            <td className="px-2 py-1.5">{String(details.insured_asset ?? '—')}</td>
-            <td className="px-2 py-1.5 text-right font-mono">{formatINR(row.principalAmount)}</td>
-            <td className="px-2 py-1.5 text-right font-mono">{formatINR(row.periodicAmount)}</td>
-            <td className="px-2 py-1.5 font-mono">
+            <td className="whitespace-nowrap px-3 py-2 capitalize">
+              {String(details.sub_category ?? '—')}
+            </td>
+            <td className="px-3 py-2">
+              <span className="font-medium">{row.label}</span>
+              {/* The insured asset gets its own line only when it says
+                  something the policy name does not. On a vehicle policy the
+                  two are routinely the same string — the registration number —
+                  and printing it twice is noise, not information. */}
+              {insuredAsset && insuredAsset !== row.label && (
+                <span className="mt-0.5 block text-[11.5px] text-ink-soft">{insuredAsset}</span>
+              )}
+            </td>
+            <td className="whitespace-nowrap px-3 py-2 text-right font-mono">{formatINR(row.principalAmount)}</td>
+            <td className="whitespace-nowrap px-3 py-2 text-right font-mono">{formatINR(row.periodicAmount)}</td>
+            <td className="whitespace-nowrap px-3 py-2 font-mono">
               {row.nextDueDate ? formatDMY(row.nextDueDate) : '—'}
             </td>
-            <td className="px-2 py-1.5">
+            <td className="whitespace-nowrap px-3 py-2">
               <ManagedByPill value={row.managedBy} />
             </td>
-            <td className="px-2 py-1.5">{nameOf(row.memberId)}</td>
+            <td className="whitespace-nowrap px-3 py-2">{nameOf(row.memberId)}</td>
           </>
         )
       }}
       renderEdit={(draft, set, errors) => (
         <>
-          <td className="px-2 py-1.5">
+          <td className="px-3 py-2">
             <label htmlFor="gi-sub" className="sr-only">
               Category
             </label>
@@ -95,7 +112,7 @@ export function GeneralInsuranceSection({
             </select>
             <FieldError id="gi-sub" message={detailError(errors, 'sub_category')} />
           </td>
-          <td className="px-2 py-1.5">
+          <td className="px-3 py-2">
             <label htmlFor="gi-label" className="sr-only">
               Policy name
             </label>
@@ -108,20 +125,7 @@ export function GeneralInsuranceSection({
             />
             <FieldError id="gi-label" message={errors.label} />
           </td>
-          <td className="px-2 py-1.5">
-            <label htmlFor="gi-asset" className="sr-only">
-              Insured asset
-            </label>
-            <input
-              id="gi-asset"
-              value={detail(draft, 'insured_asset')}
-              onChange={(event) => set(setDetail(draft, 'insured_asset', event.target.value))}
-              className={CELL}
-              {...fieldErrorProps('gi-asset', detailError(errors, 'insured_asset'))}
-            />
-            <FieldError id="gi-asset" message={detailError(errors, 'insured_asset')} />
-          </td>
-          <td className="px-2 py-1.5">
+          <td className="px-3 py-2">
             <MoneyInput
               id="gi-coverage"
               label="Coverage"
@@ -130,7 +134,7 @@ export function GeneralInsuranceSection({
               error={errors.principalAmount}
             />
           </td>
-          <td className="px-2 py-1.5">
+          <td className="px-3 py-2">
             <MoneyInput
               id="gi-premium"
               label="Premium"
@@ -139,7 +143,7 @@ export function GeneralInsuranceSection({
               error={errors.periodicAmount}
             />
           </td>
-          <td className="px-2 py-1.5">
+          <td className="px-3 py-2">
             <DateField
               id="gi-due"
               label="Due date"
@@ -148,7 +152,7 @@ export function GeneralInsuranceSection({
               error={errors.nextDueDate}
             />
           </td>
-          <td className="px-2 py-1.5">
+          <td className="px-3 py-2">
             <label htmlFor="gi-managed" className="sr-only">
               Managed by
             </label>
@@ -165,11 +169,27 @@ export function GeneralInsuranceSection({
           {/* Member is set below in the details panel, where its label can
               stay visible — this cell just keeps the column aligned with the
               read row while editing. */}
-          <td className="px-2 py-1.5 text-ink-soft">{nameOf(draft.memberId)}</td>
+          <td className="px-3 py-2 text-ink-soft">{nameOf(draft.memberId)}</td>
         </>
       )}
       renderDetails={(draft, set, errors) => (
         <>
+          <div>
+            {/* Moved out of the row when the column was dropped. It keeps its
+                label text, so it is still found by the same name — and gains a
+                visible one, which it never had in the row. */}
+            <label htmlFor="gi-asset" className={DETAIL_LABEL}>
+              Insured asset
+            </label>
+            <input
+              id="gi-asset"
+              value={detail(draft, 'insured_asset')}
+              onChange={(event) => set(setDetail(draft, 'insured_asset', event.target.value))}
+              className={CELL}
+              {...fieldErrorProps('gi-asset', detailError(errors, 'insured_asset'))}
+            />
+            <FieldError id="gi-asset" message={detailError(errors, 'insured_asset')} />
+          </div>
           <div>
             <label htmlFor="gi-policy-type" className={DETAIL_LABEL}>
               Policy type

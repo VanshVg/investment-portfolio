@@ -5,8 +5,30 @@ import { createServerSupabase } from '@/lib/supabase/server'
 import { holdingInput } from '@/lib/validation/holdings'
 import { applyDueDateEdit } from '@/lib/domain/due-dates'
 import { fromPostgrestError, fromZodError, fromEmptyWrite, type ActionResult } from '@/lib/actions/result'
+import { reconcileDueInstances } from '@/lib/reminders/reconcile'
+import { horizonFrom } from '@/lib/reminders/horizon'
+import { todayInIndia } from '@/lib/domain/dates'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/db/types.generated'
+
+/**
+ * Regenerates a holding's due instances after a successful write.
+ *
+ * Deliberately cannot fail the action. The holding is the advisor's actual
+ * data and it is already saved; reporting failure here would claim a write did
+ * not happen when it did. Stale instances are self-correcting — the daily job
+ * runs the same reconciliation for every holding.
+ */
+async function refreshSchedule(
+  supabase: SupabaseClient<Database>,
+  holdingId: string,
+): Promise<void> {
+  try {
+    await reconcileDueInstances(supabase, holdingId, horizonFrom(todayInIndia()))
+  } catch (cause) {
+    console.error(`due-instance refresh failed for holding ${holdingId}`, cause)
+  }
+}
 
 const MEMBER_NOT_IN_FAMILY_ERROR: ActionResult = {
   ok: false,
@@ -68,6 +90,8 @@ export async function createHolding(familyId: string, input: unknown): Promise<A
     .single()
 
   if (error) return fromPostgrestError(error)
+
+  await refreshSchedule(supabase, data!.id)
 
   revalidatePath(`/families/${familyId}`)
   return { ok: true, id: data!.id }
@@ -136,6 +160,8 @@ export async function updateHolding(
 
   if (error) return fromPostgrestError(error)
   if (!updated || updated.length === 0) return fromEmptyWrite()
+
+  await refreshSchedule(supabase, id)
 
   revalidatePath(`/families/${familyId}`)
   return { ok: true, id }

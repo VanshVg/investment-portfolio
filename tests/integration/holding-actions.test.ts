@@ -1,11 +1,23 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { adminClient, anonClient, ensureUser, signedInClient } from '../helpers/db'
 import { applyDueDateEdit } from '@/lib/domain/due-dates'
+import { reconcileDueInstances } from '@/lib/reminders/reconcile'
+import { addDays } from 'date-fns'
+import { fromISODate, toISODate, todayInIndia } from '@/lib/domain/dates'
 
 const EMAIL = 'holding-actions@example.test'
 const PASSWORD = 'test-password-123'
 let advisorId: string
 let familyId: string
+
+// The reconcile-on-update test below deletes an old due instance because it
+// no longer sits on the holding's schedule -- but reconciliation only ever
+// touches rows at or after today, so the old date must still be there when
+// the fix runs. Derived from today, not hardcoded, so this stays true no
+// matter how long this suite goes unrun.
+const RECONCILE_TODAY = todayInIndia()
+const RECONCILE_OLD_DATE = toISODate(addDays(fromISODate(RECONCILE_TODAY)!, 10))
+const RECONCILE_NEW_DATE = toISODate(addDays(fromISODate(RECONCILE_TODAY)!, 40))
 
 const { revalidatePath, mockCreateServerSupabase } = vi.hoisted(() => ({
   revalidatePath: vi.fn(),
@@ -26,6 +38,17 @@ vi.mock('next/cache', () => ({
 vi.mock('@/lib/supabase/server', () => ({
   createServerSupabase: mockCreateServerSupabase,
 }))
+
+// Wraps the real reconcileDueInstances in a vi.fn whose default behaviour is
+// the actual implementation, so every existing test in this file still runs
+// real reconciliation unless a test explicitly queues a one-off failure with
+// mockImplementationOnce (see the "still reports success" test below). This
+// is deliberately not a blanket mock — most of this file needs the genuine
+// generation behaviour to be under test.
+vi.mock('@/lib/reminders/reconcile', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/reminders/reconcile')>()
+  return { ...actual, reconcileDueInstances: vi.fn(actual.reconcileDueInstances) }
+})
 
 mockCreateServerSupabase.mockImplementation(() => signedInClient(EMAIL, PASSWORD))
 
@@ -665,5 +688,160 @@ describe('createHolding / updateHolding / deleteHolding server actions', () => {
 
       await admin.from('holdings').delete().eq('id', holding!.id)
     })
+  })
+})
+
+async function datesFor(holdingId: string): Promise<string[]> {
+  const admin = adminClient()
+  const { data, error } = await admin
+    .from('due_instances')
+    .select('due_date')
+    .eq('holding_id', holdingId)
+    .order('due_date')
+  if (error) throw new Error(error.message)
+  return (data ?? []).map((row) => row.due_date)
+}
+
+async function instanceIdsFor(holdingId: string): Promise<string[]> {
+  const admin = adminClient()
+  const { data, error } = await admin
+    .from('due_instances')
+    .select('id')
+    .eq('holding_id', holdingId)
+    .order('due_date')
+  if (error) throw new Error(error.message)
+  return (data ?? []).map((row) => row.id)
+}
+
+// These exercise the save path's due-instance generation (Task 6): createHolding
+// and updateHolding must each trigger reconciliation so a holding entered in
+// front of a client shows its due dates immediately, without waiting on the
+// nightly job. Driven through the actions themselves, not through direct
+// inserts, since that wiring is exactly what these tests are checking for.
+describe('due instance generation on the write path', () => {
+  const baseInput = {
+    memberId: null,
+    managedBy: 'self' as const,
+    label: 'Generation probe',
+    institution: '',
+    principalAmount: null,
+    periodicAmount: 25_000,
+    dueFrequency: 'annual' as const,
+    remindersEnabled: true,
+    category: 'life_insurance' as const,
+    details: {},
+  }
+
+  it('creates due instances when a holding is created', async () => {
+    const result = await createHolding(familyId, { ...baseInput, nextDueDate: '2026-10-01' })
+    expect(result.ok).toBe(true)
+    if (!result.ok) throw new Error('expected ok result')
+
+    const dates = await datesFor(result.id)
+    expect(dates).toContain('2026-10-01')
+
+    await adminClient().from('holdings').delete().eq('id', result.id)
+  })
+
+  it('reconciles due instances when the due date is corrected', async () => {
+    const created = await createHolding(familyId, {
+      ...baseInput,
+      label: 'Reconcile-on-update probe',
+      dueFrequency: 'one_time',
+      nextDueDate: RECONCILE_OLD_DATE,
+    })
+    expect(created.ok).toBe(true)
+    if (!created.ok) throw new Error('expected ok result')
+
+    const updated = await updateHolding(created.id, familyId, {
+      ...baseInput,
+      label: 'Reconcile-on-update probe',
+      dueFrequency: 'one_time',
+      nextDueDate: RECONCILE_NEW_DATE,
+    })
+    expect(updated.ok).toBe(true)
+
+    const dates = await datesFor(created.id)
+    expect(dates).toContain(RECONCILE_NEW_DATE)
+    expect(dates).not.toContain(RECONCILE_OLD_DATE)
+
+    await adminClient().from('holdings').delete().eq('id', created.id)
+  })
+
+  it('does not regenerate when a non-schedule field changes', async () => {
+    const created = await createHolding(familyId, {
+      ...baseInput,
+      label: 'Stable schedule probe',
+      nextDueDate: '2026-10-01',
+    })
+    expect(created.ok).toBe(true)
+    if (!created.ok) throw new Error('expected ok result')
+
+    const idsBefore = await instanceIdsFor(created.id)
+    expect(idsBefore.length).toBeGreaterThan(0)
+
+    const relabelled = await updateHolding(created.id, familyId, {
+      ...baseInput,
+      label: 'Stable schedule probe (renamed)',
+      nextDueDate: '2026-10-01', // unchanged: not a schedule edit
+    })
+    expect(relabelled.ok).toBe(true)
+
+    expect(await instanceIdsFor(created.id)).toEqual(idsBefore)
+
+    await adminClient().from('holdings').delete().eq('id', created.id)
+  })
+
+  // The rule this task exists to protect: the holding write and the due-
+  // instance refresh are two separate statements, and the holding write is
+  // the advisor's actual data. If reconciliation fails after that write has
+  // already landed, reporting failure would claim the write did not happen
+  // when it did — so createHolding/updateHolding must still report success,
+  // and the row must genuinely be there. Stale instances are not lost: the
+  // next nightly reconciliation run repairs them the same way it repairs a
+  // missed run. If this test ever fails, the fix is almost certainly to
+  // restore the swallow in `refreshSchedule`, not to remove this test.
+  it('still reports success and still writes the holding when reconciliation throws', async () => {
+    const forcedFailure = new Error('forced failure for regression test')
+
+    vi.mocked(reconcileDueInstances).mockImplementationOnce(async () => {
+      throw forcedFailure
+    })
+    const created = await createHolding(familyId, {
+      ...baseInput,
+      label: 'Swallow-rule probe (create)',
+      nextDueDate: '2026-10-01',
+    })
+    expect(created.ok).toBe(true)
+    if (!created.ok) throw new Error('expected ok result')
+
+    // Assert the write really happened by reading the row back — a version
+    // of refreshSchedule that returned ok:true without actually writing
+    // anything would pass a check on the returned id alone.
+    const { data: createdRow } = await adminClient()
+      .from('holdings')
+      .select('id, label')
+      .eq('id', created.id)
+      .maybeSingle()
+    expect(createdRow?.label).toBe('Swallow-rule probe (create)')
+
+    vi.mocked(reconcileDueInstances).mockImplementationOnce(async () => {
+      throw forcedFailure
+    })
+    const updated = await updateHolding(created.id, familyId, {
+      ...baseInput,
+      label: 'Swallow-rule probe (updated)',
+      nextDueDate: '2026-10-01',
+    })
+    expect(updated.ok).toBe(true)
+
+    const { data: updatedRow } = await adminClient()
+      .from('holdings')
+      .select('label')
+      .eq('id', created.id)
+      .single()
+    expect(updatedRow?.label).toBe('Swallow-rule probe (updated)')
+
+    await adminClient().from('holdings').delete().eq('id', created.id)
   })
 })
