@@ -4,11 +4,43 @@ import { useEffect, useRef, useState, useTransition } from 'react'
 import type { ActionResult } from '@/lib/actions/result'
 import { ConfirmDelete } from './ConfirmDelete'
 
+/**
+ * `SNUG` sizes a column to exactly its content.
+ *
+ * A 1% width on a table that cannot honour it is the standard way to say
+ * "shrink to fit": the browser gives the column its content width and hands
+ * the leftover to the columns that asked for nothing. It only works if the
+ * cells also refuse to wrap, so every SNUG column's cells carry
+ * `whitespace-nowrap` — the two go together.
+ *
+ * Use it for anything of bounded width: a figure, a date, a name, a pill.
+ * Leave `width` off the one or two columns holding free text, so they absorb
+ * the slack instead of it being spread evenly over columns that don't need it.
+ *
+ * Hand-picked percentages were tried first and are what this replaces. They
+ * are guesses about content the component cannot see, and they went wrong in
+ * both directions at once: a 24% column holding a 130px fund name sat beside
+ * a 15% column whose right-aligned figure left the gap on its own left edge,
+ * while a 15% member column wrapped "Rajeshkumar Patel" onto two lines and
+ * doubled every row's height.
+ */
+const SNUG = '1%'
+
 export interface Column {
   key: string
   label: string
+  /** Omit to absorb leftover space; `SNUG` to shrink to content. */
   width?: string
+  /**
+   * Set this on every column whose cells render a figure. Money is read by
+   * scanning the last digit, so those cells are right-aligned — and a header
+   * left alone then sits at the opposite end of the column from the numbers
+   * it names, which reads as two unrelated columns rather than one.
+   */
+  align?: 'right'
 }
+
+export { SNUG }
 
 type Mode<T> = { kind: 'idle' } | { kind: 'new' } | { kind: 'edit'; row: T }
 
@@ -190,17 +222,29 @@ export function EditableSection<T, D>({
           <thead>
             <tr className="border-b border-line text-left text-[11px] uppercase tracking-[0.04em] text-ink-soft">
               {columns.map((column) => (
-                <th key={column.key} style={{ width: column.width }} className="px-2 py-1.5 font-medium">
+                // Headers never wrap. A two-line header pushes the whole row
+                // taller and puts the column's name further from its data than
+                // the data of the column beside it.
+                <th
+                  key={column.key}
+                  style={{ width: column.width }}
+                  className={`whitespace-nowrap px-3 py-2 font-medium ${
+                    column.align === 'right' ? 'text-right' : ''
+                  }`}
+                >
                   {column.label}
                 </th>
               ))}
-              <th className="px-2 py-1.5" />
+              {/* Snug like any other bounded column, or it competes with the
+                  free-text column for the leftover and the slack lands in two
+                  places instead of one. */}
+              <th style={{ width: SNUG }} className="px-3 py-2" />
             </tr>
           </thead>
           <tbody>
             {rows.length === 0 && !editing && (
               <tr>
-                <td colSpan={colSpan} className="px-2 py-4 text-center text-ink-soft">
+                <td colSpan={colSpan} className="px-3 py-4 text-center text-ink-soft">
                   {emptyMessage}
                 </td>
               </tr>
@@ -223,7 +267,7 @@ export function EditableSection<T, D>({
                       a thousand elements here. Keep it as aria-label rather
                       than hidden text, which would duplicate the name already
                       shown in the row and make it ambiguous to match. */}
-                  <td className="whitespace-nowrap px-2 py-1.5 text-right">
+                  <td className="whitespace-nowrap px-3 py-2 text-right">
                     {editable && (
                       <button
                         type="button"
@@ -255,7 +299,7 @@ export function EditableSection<T, D>({
             {editing && (
               <tr ref={editorRef} onKeyDown={onKeyDown} className="border-b border-line bg-[#fcfbf8]">
                 {renderEdit(draft, set, errors)}
-                <td className="whitespace-nowrap px-2 py-1.5 text-right">
+                <td className="whitespace-nowrap px-3 py-2 text-right">
                   <button type="button" onClick={save} disabled={pending} className="underline">
                     {pending ? 'Saving…' : 'Save'}
                   </button>
@@ -270,7 +314,7 @@ export function EditableSection<T, D>({
               // Same key handling as the editor row: the detail fields are part
               // of the same commit unit, so Enter and Escape must work in them.
               <tr onKeyDown={onKeyDown} className="border-b border-line bg-[#fcfbf8]">
-                <td colSpan={colSpan} className="px-2 pb-3">
+                <td colSpan={colSpan} className="px-3 pb-3">
                   <div className="grid grid-cols-2 gap-x-4 gap-y-2 md:grid-cols-4">
                     {renderDetails(draft, set, errors)}
                   </div>

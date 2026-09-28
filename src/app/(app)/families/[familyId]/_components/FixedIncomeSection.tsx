@@ -1,6 +1,6 @@
 'use client'
 
-import { EditableSection } from '@/components/ledger/EditableSection'
+import { EditableSection, SNUG } from '@/components/ledger/EditableSection'
 import { FieldError, fieldErrorProps } from '@/components/ledger/FieldError'
 import { ManagedByPill } from '@/components/ledger/ManagedByPill'
 import { MemberSelect } from '@/components/ledger/MemberSelect'
@@ -45,13 +45,13 @@ export function FixedIncomeSection({
       title="Fixed income, bonds & demat"
       description="Maturity dates drive reminders here exactly as renewal dates do for insurance."
       columns={[
-        { key: 'member', label: 'Member', width: '15%' },
-        { key: 'label', label: 'Description', width: '21%' },
-        { key: 'asset', label: 'Asset type', width: '16%' },
-        { key: 'institution', label: 'Institution', width: '18%' },
-        { key: 'amount', label: 'Invested', width: '13%' },
-        { key: 'maturity', label: 'Maturity', width: '12%' },
-        { key: 'managed', label: 'Managed by', width: '10%' },
+        { key: 'member', label: 'Member', width: SNUG },
+        { key: 'label', label: 'Description' },
+        { key: 'asset', label: 'Asset type', width: SNUG },
+        { key: 'institution', label: 'Institution', width: SNUG },
+        { key: 'amount', label: 'Invested', width: SNUG, align: 'right' },
+        { key: 'maturity', label: 'Maturity', width: SNUG },
+        { key: 'managed', label: 'Managed by', width: SNUG },
       ]}
       rows={holdings}
       rowKey={(row) => row.id}
@@ -60,15 +60,15 @@ export function FixedIncomeSection({
         const details = (row.details ?? {}) as Record<string, unknown>
         return (
           <>
-            <td className="px-2 py-1.5">{nameOf(row.memberId)}</td>
-            <td className="px-2 py-1.5 font-medium">{row.label}</td>
-            <td className="px-2 py-1.5">{String(details.asset_type ?? '—')}</td>
-            <td className="px-2 py-1.5">{row.institution ?? '—'}</td>
-            <td className="px-2 py-1.5 text-right font-mono">{formatINR(row.principalAmount)}</td>
-            <td className="px-2 py-1.5 font-mono">
+            <td className="whitespace-nowrap px-3 py-2">{nameOf(row.memberId)}</td>
+            <td className="px-3 py-2 font-medium">{row.label}</td>
+            <td className="whitespace-nowrap px-3 py-2">{String(details.asset_type ?? '—')}</td>
+            <td className="whitespace-nowrap px-3 py-2">{row.institution ?? '—'}</td>
+            <td className="whitespace-nowrap px-3 py-2 text-right font-mono">{formatINR(row.principalAmount)}</td>
+            <td className="whitespace-nowrap px-3 py-2 font-mono">
               {row.nextDueDate ? formatDMY(row.nextDueDate) : '—'}
             </td>
-            <td className="px-2 py-1.5">
+            <td className="whitespace-nowrap px-3 py-2">
               <ManagedByPill value={row.managedBy} />
             </td>
           </>
@@ -76,7 +76,7 @@ export function FixedIncomeSection({
       }}
       renderEdit={(draft, set, errors) => (
         <>
-          <td className="px-2 py-1.5">
+          <td className="px-3 py-2">
             <MemberSelect
               id="fi-member"
               label="Member"
@@ -86,7 +86,7 @@ export function FixedIncomeSection({
               error={errors.memberId}
             />
           </td>
-          <td className="px-2 py-1.5">
+          <td className="px-3 py-2">
             <label htmlFor="fi-label" className="sr-only">
               Description
             </label>
@@ -99,7 +99,7 @@ export function FixedIncomeSection({
             />
             <FieldError id="fi-label" message={errors.label} />
           </td>
-          <td className="px-2 py-1.5">
+          <td className="px-3 py-2">
             <label htmlFor="fi-asset" className="sr-only">
               Asset type
             </label>
@@ -113,7 +113,7 @@ export function FixedIncomeSection({
             />
             <FieldError id="fi-asset" message={detailError(errors, 'asset_type')} />
           </td>
-          <td className="px-2 py-1.5">
+          <td className="px-3 py-2">
             <label htmlFor="fi-institution" className="sr-only">
               Institution
             </label>
@@ -124,7 +124,7 @@ export function FixedIncomeSection({
               className={CELL}
             />
           </td>
-          <td className="px-2 py-1.5">
+          <td className="px-3 py-2">
             <MoneyInput
               id="fi-amount"
               label="Invested amount"
@@ -133,7 +133,7 @@ export function FixedIncomeSection({
               error={errors.principalAmount}
             />
           </td>
-          <td className="px-2 py-1.5">
+          <td className="px-3 py-2">
             {/* Maturity lives in next_due_date, never in details.maturity_date:
                 two stores for one fact would drift, and only the column feeds
                 the reminder engine. */}
@@ -145,7 +145,7 @@ export function FixedIncomeSection({
               error={errors.nextDueDate}
             />
           </td>
-          <td className="px-2 py-1.5">
+          <td className="px-3 py-2">
             <label htmlFor="fi-managed" className="sr-only">
               Managed by
             </label>

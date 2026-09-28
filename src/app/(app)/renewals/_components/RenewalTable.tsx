@@ -206,15 +206,15 @@ export function RenewalTable({
       <table className="w-full border-collapse text-[12.5px]">
         <thead>
           <tr className="border-b border-line text-left text-[11px] uppercase tracking-[0.04em] text-ink-soft">
-            <th className="px-2 py-1.5 font-medium">Due date</th>
-            <th className="px-2 py-1.5 font-medium">Family</th>
-            <th className="px-2 py-1.5 font-medium">Member</th>
-            <th className="px-2 py-1.5 font-medium">Holding</th>
-            <th className="px-2 py-1.5 font-medium">Managed by</th>
-            <th className="px-2 py-1.5 text-right font-medium">Amount due</th>
-            <th className="px-2 py-1.5 font-medium">Reminders sent</th>
-            <th className="px-2 py-1.5 font-medium">Paid</th>
-            <th className="px-2 py-1.5 font-medium">Renew</th>
+            <th className="whitespace-nowrap px-3 py-2 font-medium">Due date</th>
+            <th className="whitespace-nowrap px-3 py-2 font-medium">Family</th>
+            <th className="whitespace-nowrap px-3 py-2 font-medium">Member</th>
+            <th className="whitespace-nowrap px-3 py-2 font-medium">Holding</th>
+            <th className="whitespace-nowrap px-3 py-2 font-medium">Managed by</th>
+            <th className="whitespace-nowrap px-3 py-2 text-right font-medium">Amount due</th>
+            <th className="whitespace-nowrap px-3 py-2 font-medium">Reminders sent</th>
+            <th className="whitespace-nowrap px-3 py-2 font-medium">Paid</th>
+            <th className="whitespace-nowrap px-3 py-2 font-medium">Renew</th>
           </tr>
         </thead>
         <tbody>
@@ -233,7 +233,7 @@ export function RenewalTable({
                 row.managedBy === 'external' ? 'border-l-2 border-l-gold bg-gold-bg/40' : ''
               }`}
             >
-              <td className="whitespace-nowrap px-2 py-1.5 font-mono">
+              <td className="whitespace-nowrap px-3 py-2 font-mono">
                 {formatDMY(row.dueDate)}
                 {row.offSchedule && (
                   <span className="ml-1.5 inline-block rounded-full bg-gold-bg px-1.5 py-0.5 text-[10px] font-medium text-gold">
@@ -241,25 +241,25 @@ export function RenewalTable({
                   </span>
                 )}
               </td>
-              <td className="px-2 py-1.5">{row.familyName}</td>
-              <td className="px-2 py-1.5">{row.memberName ?? 'Whole family'}</td>
-              <td className="px-2 py-1.5">
+              <td className="px-3 py-2">{row.familyName}</td>
+              <td className="px-3 py-2">{row.memberName ?? 'Whole family'}</td>
+              <td className="px-3 py-2">
                 <span className="font-medium">{row.label}</span>
                 <span className="ml-1.5 inline-block rounded border border-line-strong px-1 py-0.5 text-[10px] uppercase tracking-[0.03em] text-ink-soft">
                   {CATEGORY_LABELS[row.category]}
                 </span>
               </td>
-              <td className="px-2 py-1.5">
+              <td className="px-3 py-2">
                 <ManagedByPill value={row.managedBy} />
               </td>
-              <td className="px-2 py-1.5 text-right font-mono">{formatINR(row.amountDue)}</td>
-              <td className="px-2 py-1.5 font-mono text-[11.5px] text-ink-soft">
+              <td className="px-3 py-2 text-right font-mono">{formatINR(row.amountDue)}</td>
+              <td className="px-3 py-2 font-mono text-[11.5px] text-ink-soft">
                 {firedWindowsText(row.firedWindows)}
               </td>
-              <td className="px-2 py-1.5">
+              <td className="px-3 py-2">
                 <PaymentStatusControl row={row} setPaymentStatus={setPaymentStatus} />
               </td>
-              <td className="px-2 py-1.5">
+              <td className="px-3 py-2">
                 <MarkRenewedControl row={row} markRenewed={markRenewed} />
 
               </td>

@@ -1,6 +1,6 @@
 'use client'
 
-import { EditableSection } from '@/components/ledger/EditableSection'
+import { EditableSection, SNUG } from '@/components/ledger/EditableSection'
 import { FieldError, fieldErrorProps } from '@/components/ledger/FieldError'
 import { ManagedByPill } from '@/components/ledger/ManagedByPill'
 import { MemberSelect } from '@/components/ledger/MemberSelect'
@@ -45,33 +45,33 @@ export function LifeInsuranceSection({
       title="Life insurance"
       description="Mark each policy as managed by you or held externally — external entries are consolidation opportunities."
       columns={[
-        { key: 'member', label: 'Member', width: '16%' },
-        { key: 'plan', label: 'Plan name', width: '24%' },
-        { key: 'sum', label: 'Sum assured', width: '15%' },
-        { key: 'premium', label: 'Annual premium', width: '15%' },
-        { key: 'due', label: 'Due date', width: '15%' },
-        { key: 'managed', label: 'Managed by', width: '15%' },
+        { key: 'member', label: 'Member', width: SNUG },
+        { key: 'plan', label: 'Plan name' },
+        { key: 'sum', label: 'Sum assured', width: SNUG, align: 'right' },
+        { key: 'premium', label: 'Annual premium', width: SNUG, align: 'right' },
+        { key: 'due', label: 'Due date', width: SNUG },
+        { key: 'managed', label: 'Managed by', width: SNUG },
       ]}
       rows={holdings}
       rowKey={(row) => row.id}
       rowLabel={(row) => row.label}
       renderRead={(row) => (
         <>
-          <td className="px-2 py-1.5">{nameOf(row.memberId)}</td>
-          <td className="px-2 py-1.5 font-medium">{row.label}</td>
-          <td className="px-2 py-1.5 text-right font-mono">{formatINR(row.principalAmount)}</td>
-          <td className="px-2 py-1.5 text-right font-mono">{formatINR(row.periodicAmount)}</td>
-          <td className="px-2 py-1.5 font-mono">
+          <td className="whitespace-nowrap px-3 py-2">{nameOf(row.memberId)}</td>
+          <td className="px-3 py-2 font-medium">{row.label}</td>
+          <td className="whitespace-nowrap px-3 py-2 text-right font-mono">{formatINR(row.principalAmount)}</td>
+          <td className="whitespace-nowrap px-3 py-2 text-right font-mono">{formatINR(row.periodicAmount)}</td>
+          <td className="whitespace-nowrap px-3 py-2 font-mono">
             {row.nextDueDate ? formatDMY(row.nextDueDate) : '—'}
           </td>
-          <td className="px-2 py-1.5">
+          <td className="whitespace-nowrap px-3 py-2">
             <ManagedByPill value={row.managedBy} />
           </td>
         </>
       )}
       renderEdit={(draft, set, errors) => (
         <>
-          <td className="px-2 py-1.5">
+          <td className="px-3 py-2">
             <MemberSelect
               id="life-member"
               label="Member"
@@ -81,7 +81,7 @@ export function LifeInsuranceSection({
               error={errors.memberId}
             />
           </td>
-          <td className="px-2 py-1.5">
+          <td className="px-3 py-2">
             <label htmlFor="life-label" className="sr-only">
               Plan name
             </label>
@@ -94,7 +94,7 @@ export function LifeInsuranceSection({
             />
             <FieldError id="life-label" message={errors.label} />
           </td>
-          <td className="px-2 py-1.5">
+          <td className="px-3 py-2">
             <MoneyInput
               id="life-sum"
               label="Sum assured"
@@ -103,7 +103,7 @@ export function LifeInsuranceSection({
               error={errors.principalAmount}
             />
           </td>
-          <td className="px-2 py-1.5">
+          <td className="px-3 py-2">
             <MoneyInput
               id="life-premium"
               label="Annual premium"
@@ -112,7 +112,7 @@ export function LifeInsuranceSection({
               error={errors.periodicAmount}
             />
           </td>
-          <td className="px-2 py-1.5">
+          <td className="px-3 py-2">
             <DateField
               id="life-due"
               label="Due date"
@@ -121,7 +121,7 @@ export function LifeInsuranceSection({
               error={errors.nextDueDate}
             />
           </td>
-          <td className="px-2 py-1.5">
+          <td className="px-3 py-2">
             <label htmlFor="life-managed" className="sr-only">
               Managed by
             </label>
