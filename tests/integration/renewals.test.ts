@@ -1,7 +1,9 @@
 import { randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { adminClient, signedInClient } from '../helpers/db'
-import { listRenewals } from '@/lib/queries/renewals'
+import { addDays } from 'date-fns'
+import { listOverdue, listRenewals } from '@/lib/queries/renewals'
+import { fromISODate, toISODate, todayInIndia } from '@/lib/domain/dates'
 import type { SupabaseClient } from '@supabase/supabase-js'
 
 const EMAIL = process.env.SEED_ADMIN_EMAIL!
@@ -417,6 +419,170 @@ describe('renewal listing', () => {
     it('reports an on-schedule instance as such', async () => {
       const row = await rowFor(monthlyInstanceId)
       expect(row.offSchedule).toBe(false)
+    })
+  })
+  // Its own fixture family, with every date counted from today, so each row
+  // below exercises exactly one clause of the overdue rule however the
+  // calendar has moved since this was written.
+  describe('overdue listing, on an isolated fixture', () => {
+    const admin = adminClient()
+    const fixtureFamilyIds: string[] = []
+    const today = todayInIndia()
+    const day = (offset: number) => toISODate(addDays(fromISODate(today)!, offset))
+
+    let fixtureFamilyId: string
+    let unknownId: string
+    let unpaidId: string
+    let externalId: string
+
+    async function holdingWithInstance(
+      label: string,
+      {
+        nextDueDate,
+        dueDate,
+        managedBy = 'self',
+        instance = {},
+      }: {
+        nextDueDate: string
+        dueDate: string
+        managedBy?: 'self' | 'external'
+        instance?: Record<string, unknown>
+      },
+    ): Promise<string> {
+      const { data: holding, error } = await admin
+        .from('holdings')
+        .insert({
+          family_id: fixtureFamilyId,
+          category: 'life_insurance',
+          label,
+          managed_by: managedBy,
+          due_frequency: 'annual',
+          anchor_due_date: nextDueDate,
+          next_due_date: nextDueDate,
+        })
+        .select('id')
+        .single()
+      if (error) throw new Error(`fixture holding insert failed: ${error.message}`)
+      const { data, error: instanceError } = await admin
+        .from('due_instances')
+        .insert({ holding_id: holding!.id, due_date: dueDate, ...instance })
+        .select('id')
+        .single()
+      if (instanceError) throw new Error(`fixture instance insert failed: ${instanceError.message}`)
+      return data!.id as string
+    }
+
+    beforeAll(async () => {
+      const { data: family, error } = await admin
+        .from('families')
+        .insert({ name: 'Overdue query fixture', owner_advisor_id: advisorId })
+        .select('id')
+        .single()
+      if (error) throw new Error(`fixture family insert failed: ${error.message}`)
+      fixtureFamilyId = family!.id as string
+      fixtureFamilyIds.push(fixtureFamilyId)
+
+      // Overdue: past, never ticked, still the holding's current due date.
+      unknownId = await holdingWithInstance('Overdue unknown', { nextDueDate: day(-10), dueDate: day(-10) })
+      // Overdue: past and explicitly unpaid — and the oldest, so it leads.
+      unpaidId = await holdingWithInstance('Overdue unpaid', {
+        nextDueDate: day(-40),
+        dueDate: day(-40),
+        instance: { payment_status: 'unpaid' },
+      })
+      // Overdue, on an externally managed holding.
+      externalId = await holdingWithInstance('Overdue external', {
+        nextDueDate: day(-3),
+        dueDate: day(-3),
+        managedBy: 'external',
+      })
+      // Not overdue: paid.
+      await holdingWithInstance('Past but paid', {
+        nextDueDate: day(-5),
+        dueDate: day(-5),
+        instance: { payment_status: 'paid' },
+      })
+      // Not overdue: off schedule, kept only as evidence.
+      await holdingWithInstance('Past but off schedule', {
+        nextDueDate: day(-7),
+        dueDate: day(-7),
+        instance: { off_schedule: true },
+      })
+      // Not overdue: the holding has already been renewed past this date.
+      await holdingWithInstance('Past but renewed', { nextDueDate: day(355), dueDate: day(-10) })
+      // Not overdue: due today is not yet late.
+      await holdingWithInstance('Due today', { nextDueDate: today, dueDate: today })
+    })
+
+    afterAll(async () => {
+      if (fixtureFamilyIds.length === 0) return
+      const { data, error } = await admin
+        .from('families')
+        .delete()
+        .in('id', fixtureFamilyIds)
+        .select('id')
+      if (error) throw new Error(`fixture cleanup failed: ${error.message}`)
+      if (!data || data.length !== fixtureFamilyIds.length) {
+        throw new Error(
+          `fixture cleanup deleted ${data?.length ?? 0} of ${fixtureFamilyIds.length} families`,
+        )
+      }
+    })
+
+    it('lists every unpaid past due date, oldest first, and nothing else', async () => {
+      const { rows, truncated } = await listOverdue(client, {
+        before: today,
+        today,
+        familyId: fixtureFamilyId,
+      })
+      expect(rows.map((row) => row.dueInstanceId)).toEqual([unpaidId, unknownId, externalId])
+      expect(truncated).toBe(false)
+    })
+
+    it('stops at the given bound, so a period already on screen is not listed twice', async () => {
+      const { rows } = await listOverdue(client, {
+        before: day(-20),
+        today,
+        familyId: fixtureFamilyId,
+      })
+      expect(rows.map((row) => row.dueInstanceId)).toEqual([unpaidId])
+    })
+
+    it('honours the managed-by filter', async () => {
+      const { rows } = await listOverdue(client, {
+        before: today,
+        today,
+        familyId: fixtureFamilyId,
+        managedBy: 'external',
+      })
+      expect(rows.map((row) => row.dueInstanceId)).toEqual([externalId])
+    })
+
+    it('carries the same row shape as the main listing', async () => {
+      const { rows } = await listOverdue(client, {
+        before: today,
+        today,
+        familyId: fixtureFamilyId,
+      })
+      expect(rows[0]).toMatchObject({
+        dueInstanceId: unpaidId,
+        dueDate: day(-40),
+        paymentStatus: 'unpaid',
+        label: 'Overdue unpaid',
+        familyName: 'Overdue query fixture',
+        memberName: null,
+        holdingNextDueDate: day(-40),
+      })
+    })
+
+    it('reports truncation when the cap cuts the list short', async () => {
+      const { rows, truncated } = await listOverdue(
+        client,
+        { before: today, today, familyId: fixtureFamilyId },
+        { maxRows: 2 },
+      )
+      expect(rows.length).toBeLessThanOrEqual(2)
+      expect(truncated).toBe(true)
     })
   })
 })
