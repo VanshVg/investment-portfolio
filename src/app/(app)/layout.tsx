@@ -1,14 +1,9 @@
 import Link from 'next/link'
 import { Logo } from '@/components/ui/Logo'
+import { PrimaryNav } from '@/components/ui/PrimaryNav'
+import { BRAND } from '@/config/brand'
 import { createServerSupabase } from '@/lib/supabase/server'
 import { signOut } from './actions'
-
-// The application's primary navigation. Built as a list so adding a section
-// is a one-line addition here, not a rework of the header markup.
-const NAV_ITEMS: { href: string; label: string }[] = [
-  { href: '/renewals', label: 'Renewals' },
-  { href: '/settings/reminders', label: 'Settings' },
-]
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createServerSupabase()
@@ -20,7 +15,18 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     <div className="min-h-screen">
       <header className="bg-gradient-to-b from-navy to-navy-deep px-5 py-6 text-white">
         <div className="mx-auto flex max-w-[940px] flex-wrap items-end justify-between gap-4">
-          <Logo />
+          {/* The masthead is the way home from anywhere, as it is on most
+              sites. Home is the families list. Named after the brand, not
+              "families": Playwright matches names by substring, and a second
+              link containing "families" would collide with the family page's
+              own "← All families". */}
+          <Link
+            href="/families"
+            aria-label={`${BRAND.name} home`}
+            className="rounded-[3px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#c9b77e]"
+          >
+            <Logo />
+          </Link>
           <div className="text-right font-mono text-[11.5px] leading-relaxed text-[#aeb8cc]">
             <p>{user?.email}</p>
             <form action={signOut}>
@@ -32,22 +38,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         </div>
       </header>
 
-      <nav
-        aria-label="Primary"
-        className="border-b border-line bg-paper-raised px-5 py-2"
-      >
-        <div className="mx-auto flex max-w-[980px] gap-4">
-          {NAV_ITEMS.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className="text-[12.5px] text-ink-soft hover:text-navy"
-            >
-              {item.label}
-            </Link>
-          ))}
-        </div>
-      </nav>
+      <PrimaryNav />
 
       <main className="mx-auto max-w-[980px] px-5 pb-16">{children}</main>
     </div>
