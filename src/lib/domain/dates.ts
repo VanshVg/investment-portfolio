@@ -63,3 +63,35 @@ function buildDate(year: number, month: number, day: number): Date | null {
     date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day
   return survived ? date : null
 }
+
+/**
+ * The years a date anywhere in the app may fall in. Wide enough for any real
+ * policy, deposit or maturity; narrow enough to catch a year typed short —
+ * "0202" for "2020" — which would otherwise be stored as the year 202.
+ * The calendar picker, the typed-date check and the server schema all read
+ * these, so the three cannot disagree about what a sensible date is.
+ */
+export const EARLIEST_YEAR = 1950
+export const LATEST_YEAR = 2100
+
+/**
+ * What is wrong with a typed DD-MM-YYYY date, in words the advisor can act
+ * on, or null when it is fine. Blank is not a problem here: whether a date is
+ * required is the caller's decision, not the format's.
+ *
+ * Kept separate from `parseDMY`, which only answers yes or no: "Use
+ * DD-MM-YYYY" is the wrong thing to say about 31-02-2027, which is in exactly
+ * that format and simply does not exist.
+ */
+export function describeDMYProblem(text: string): string | null {
+  const trimmed = text.trim()
+  if (trimmed === '') return null
+  const match = DMY.exec(trimmed)
+  if (!match) return 'Use DD-MM-YYYY.'
+  if (!parseDMY(trimmed)) return 'That date does not exist.'
+  const year = Number(match[3])
+  if (year < EARLIEST_YEAR || year > LATEST_YEAR) {
+    return `Enter a year between ${EARLIEST_YEAR} and ${LATEST_YEAR}.`
+  }
+  return null
+}

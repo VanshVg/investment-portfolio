@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { formatDMY, parseDMY, toISODate, todayInIndia } from '@/lib/domain/dates'
+import { formatDMY, parseDMY, toISODate, todayInIndia, describeDMYProblem } from '@/lib/domain/dates'
 
 describe('formatDMY', () => {
   it('renders Indian day-month-year order', () => {
@@ -55,4 +55,20 @@ describe('todayInIndia', () => {
       })
     }
   }
+})
+
+describe('describeDMYProblem', () => {
+  it.each([
+    ['15-03-2027', null],
+    ['29-02-2028', null],
+    ['', null],
+    ['15/03/2027', 'Use DD-MM-YYYY.'],
+    ['1-3-2027', 'Use DD-MM-YYYY.'],
+    ['31-02-2027', 'That date does not exist.'],
+    ['29-02-2027', 'That date does not exist.'],
+    ['15-03-0202', 'Enter a year between 1950 and 2100.'],
+    ['15-03-2101', 'Enter a year between 1950 and 2100.'],
+  ])('%j -> %j', (text, problem) => {
+    expect(describeDMYProblem(text)).toBe(problem)
+  })
 })

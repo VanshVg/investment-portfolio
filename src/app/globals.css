@@ -46,3 +46,60 @@ input[type='search']::-webkit-search-decoration {
   -webkit-appearance: none;
   appearance: none;
 }
+
+/* The calendar (react-day-picker) in the app's palette and type scale. */
+.date-popover .rdp-root {
+  --rdp-accent-color: var(--navy);
+  --rdp-accent-background-color: var(--paper);
+  --rdp-today-color: var(--teal);
+  --rdp-day-height: 34px;
+  --rdp-day-width: 34px;
+  --rdp-day_button-height: 32px;
+  --rdp-day_button-width: 32px;
+  --rdp-nav-height: 32px;
+  --rdp-nav_button-height: 28px;
+  --rdp-nav_button-width: 28px;
+  font-size: 13px;
+  color: var(--ink);
+}
+.date-popover .rdp-selected {
+  font-size: inherit;
+}
+.date-popover .rdp-selected .rdp-day_button {
+  background: var(--navy);
+  color: #fff;
+}
+.date-popover .rdp-weekday {
+  font-size: 11px;
+  color: var(--ink-soft);
+}
+/* The library sizes the whole month/year caption `large` (~18px). The month
+   and year pickers are invisible native selects laid over that caption, and
+   the browser draws their open option list at the select's own size — so the
+   caption, not just its visible label, has to come down, or the lists open
+   at 18px however small the label looks. */
+.date-popover .rdp-month_caption {
+  font-size: 14px;
+}
+.date-popover .rdp-dropdown {
+  font-size: 13px;
+}
+.date-popover .rdp-caption_label {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--navy);
+}
+.date-popover .rdp-dropdown:focus-visible ~ .rdp-caption_label {
+  outline: 2px solid var(--navy);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+.date-popover .rdp-chevron {
+  fill: var(--ink-soft);
+  width: 14px;
+  height: 14px;
+}
+.date-popover .rdp-button_previous:hover .rdp-chevron,
+.date-popover .rdp-button_next:hover .rdp-chevron {
+  fill: var(--navy);
+}
