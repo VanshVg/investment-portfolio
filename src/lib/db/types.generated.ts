@@ -34,6 +34,48 @@ export type Database = {
   }
   public: {
     Tables: {
+      consent_events: {
+        Row: {
+          event: Database["public"]["Enums"]["consent_event"]
+          id: string
+          member_id: string
+          mobile: string | null
+          recorded_at: string
+          recorded_by: string | null
+        }
+        Insert: {
+          event: Database["public"]["Enums"]["consent_event"]
+          id?: string
+          member_id: string
+          mobile?: string | null
+          recorded_at?: string
+          recorded_by?: string | null
+        }
+        Update: {
+          event?: Database["public"]["Enums"]["consent_event"]
+          id?: string
+          member_id?: string
+          mobile?: string | null
+          recorded_at?: string
+          recorded_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "consent_events_member_id_fkey"
+            columns: ["member_id"]
+            isOneToOne: false
+            referencedRelation: "family_members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "consent_events_recorded_by_fkey"
+            columns: ["recorded_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       due_instances: {
         Row: {
           amount_due: number | null
@@ -85,6 +127,7 @@ export type Database = {
         Row: {
           assumed_cagr: number
           created_at: string
+          deleted_at: string | null
           goal_horizon_years: number
           head_mobile: string | null
           head_name: string | null
@@ -97,6 +140,7 @@ export type Database = {
         Insert: {
           assumed_cagr?: number
           created_at?: string
+          deleted_at?: string | null
           goal_horizon_years?: number
           head_mobile?: string | null
           head_name?: string | null
@@ -109,6 +153,7 @@ export type Database = {
         Update: {
           assumed_cagr?: number
           created_at?: string
+          deleted_at?: string | null
           goal_horizon_years?: number
           head_mobile?: string | null
           head_name?: string | null
@@ -131,6 +176,7 @@ export type Database = {
       family_members: {
         Row: {
           created_at: string
+          deleted_at: string | null
           family_id: string
           id: string
           mobile: string | null
@@ -142,6 +188,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          deleted_at?: string | null
           family_id: string
           id?: string
           mobile?: string | null
@@ -153,6 +200,7 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          deleted_at?: string | null
           family_id?: string
           id?: string
           mobile?: string | null
@@ -177,6 +225,7 @@ export type Database = {
           anchor_due_date: string | null
           category: Database["public"]["Enums"]["holding_category"]
           created_at: string
+          deleted_at: string | null
           details: Json
           due_frequency: Database["public"]["Enums"]["due_frequency"]
           family_id: string
@@ -195,6 +244,7 @@ export type Database = {
           anchor_due_date?: string | null
           category: Database["public"]["Enums"]["holding_category"]
           created_at?: string
+          deleted_at?: string | null
           details?: Json
           due_frequency?: Database["public"]["Enums"]["due_frequency"]
           family_id: string
@@ -213,6 +263,7 @@ export type Database = {
           anchor_due_date?: string | null
           category?: Database["public"]["Enums"]["holding_category"]
           created_at?: string
+          deleted_at?: string | null
           details?: Json
           due_frequency?: Database["public"]["Enums"]["due_frequency"]
           family_id?: string
@@ -370,6 +421,7 @@ export type Database = {
       is_admin: { Args: never; Returns: boolean }
     }
     Enums: {
+      consent_event: "given" | "withdrawn" | "mobile_changed"
       due_frequency:
         | "annual"
         | "half_yearly"
@@ -525,6 +577,7 @@ export const Constants = {
   },
   public: {
     Enums: {
+      consent_event: ["given", "withdrawn", "mobile_changed"],
       due_frequency: [
         "annual",
         "half_yearly",
