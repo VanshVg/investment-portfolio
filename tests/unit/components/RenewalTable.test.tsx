@@ -40,9 +40,15 @@ function renderTable(
     ok: true,
     id: 'x',
   })),
+  today?: string,
 ) {
   return render(
-    <RenewalTable rows={rows} setPaymentStatus={setPaymentStatus} markRenewed={markRenewed} />,
+    <RenewalTable
+      rows={rows}
+      setPaymentStatus={setPaymentStatus}
+      markRenewed={markRenewed}
+      today={today}
+    />,
   )
 }
 
@@ -647,6 +653,36 @@ describe('RenewalTable', () => {
 
       expect(screen.queryByRole('button', { name: /^Mark renewed for Term plan/ })).not.toBeInTheDocument()
       expect(screen.getByRole('alert')).toHaveTextContent(message)
+    })
+  })
+
+  describe('overdue marker', () => {
+    const TODAY = '2026-09-29'
+    const noop = vi.fn(async () => ({ ok: true as const, id: 'x' }))
+
+    it('says how many days late an unpaid past due date is', () => {
+      renderTable([row({ dueDate: '2026-09-20' })], noop, noop, TODAY)
+      expect(screen.getByText('9 days overdue')).toBeInTheDocument()
+    })
+
+    it('uses the singular for one day', () => {
+      renderTable([row({ dueDate: '2026-09-28' })], noop, noop, TODAY)
+      expect(screen.getByText('1 day overdue')).toBeInTheDocument()
+    })
+
+    it('does not mark a past due date that has been paid', () => {
+      renderTable([row({ dueDate: '2026-09-20', paymentStatus: 'paid' })], noop, noop, TODAY)
+      expect(screen.queryByText(/overdue/)).not.toBeInTheDocument()
+    })
+
+    it('does not mark a due date that has not passed', () => {
+      renderTable([row({ dueDate: '2026-10-01' })], noop, noop, TODAY)
+      expect(screen.queryByText(/overdue/)).not.toBeInTheDocument()
+    })
+
+    it('marks nothing when the table is not told what today is', () => {
+      renderTable([row({ dueDate: '2026-09-20' })])
+      expect(screen.queryByText(/overdue/)).not.toBeInTheDocument()
     })
   })
 })

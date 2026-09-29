@@ -2,7 +2,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { RenewalFilters } from '@/app/(app)/renewals/_components/RenewalFilters'
-import { parseRenewalParams } from '@/app/(app)/renewals/_components/renewal-params'
+import { defaultRange, parseRenewalParams } from '@/app/(app)/renewals/_components/renewal-params'
 import type { RenewalFilters as RenewalFilterValues } from '@/lib/queries/renewals'
 
 const push = vi.fn()
@@ -103,6 +103,34 @@ describe('RenewalFilters', () => {
     fireEvent.change(screen.getByLabelText('From'), { target: { value: 'not a date' } })
     fireEvent.click(screen.getByRole('button', { name: 'Apply' }))
     expect(push).not.toHaveBeenCalled()
+  })
+})
+
+describe('clear filters', () => {
+  const clear = () => screen.queryByRole('button', { name: 'Clear filters' })
+
+  it('is not offered when the page is already on its defaults', () => {
+    render(<RenewalFilters filters={filters(defaultRange())} families={[]} members={[]} />)
+    expect(clear()).not.toBeInTheDocument()
+  })
+
+  it('is offered once a scope filter is set, and returns to a bare page with every param gone', () => {
+    render(
+      <RenewalFilters
+        filters={filters({ ...defaultRange(), managedBy: 'external', familyId: 'family-1', memberId: 'member-1' })}
+        families={[{ id: 'family-1', name: 'Shah family' }]}
+        members={[{ id: 'member-1', name: 'Ramesh' }]}
+      />,
+    )
+    fireEvent.click(clear()!)
+    const url = lastPushedUrl()
+    expect(url.pathname).toBe('/renewals')
+    expect([...url.searchParams.keys()]).toEqual([])
+  })
+
+  it('is offered when only the period differs from the default', () => {
+    render(<RenewalFilters filters={filters({ from: '2026-01-01', to: '2026-12-31' })} families={[]} members={[]} />)
+    expect(clear()).toBeInTheDocument()
   })
 })
 
