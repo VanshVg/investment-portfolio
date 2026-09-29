@@ -1,4 +1,5 @@
 import { createServerSupabase } from '@/lib/supabase/server'
+import { PageHeader } from '@/components/ui/PageHeader'
 import { AdvisorMobileForm } from './_components/AdvisorMobileForm'
 import { ReminderRulesSection } from './_components/ReminderRulesSection'
 import { updateAdvisorMobile, updateReminderRule } from './actions'
@@ -28,16 +29,13 @@ export default async function ReminderSettingsPage() {
     : { data: null }
 
   return (
-    <div className="pt-7">
-      <h1 className="font-serif text-[20px] font-semibold text-navy">Reminder settings</h1>
-      <p className="mt-1 text-[12.5px] text-ink-soft">
-        How far ahead each category&apos;s renewal reminders fire, and the number they reach you
-        on.
-      </p>
+    <div>
+      <PageHeader
+        title="Reminder settings"
+        description="How far ahead each category's renewal reminders fire, and the number they reach you on."
+      />
 
-      <div className="mt-4">
-        <AdvisorMobileForm mobile={profile?.mobile ?? null} updateAdvisorMobile={updateAdvisorMobile} />
-      </div>
+      <AdvisorMobileForm mobile={profile?.mobile ?? null} updateAdvisorMobile={updateAdvisorMobile} />
 
       <ReminderRulesSection
         rules={(rules ?? []).map((rule) => ({

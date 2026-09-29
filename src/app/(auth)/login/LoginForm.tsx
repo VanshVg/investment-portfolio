@@ -1,16 +1,21 @@
 'use client'
 
 import { useActionState, useState } from 'react'
+import { buttonClass, FIELD_LABEL, inputClass } from '@/components/ui/styles'
 import { login } from './actions'
 
-const FIELD_CLASS =
-  'w-full rounded border border-line-strong bg-[#fcfbf8] px-2.5 py-2 text-sm focus:border-navy focus:outline-2 focus:outline-navy'
-
-const LABEL_CLASS = 'text-[11px] uppercase tracking-[0.05em] text-ink-soft'
+const FIELD_CLASS = inputClass('lg')
+const LABEL_CLASS = FIELD_LABEL
 
 export function LoginForm() {
   const [error, formAction, pending] = useActionState(login, null)
   const [passwordVisible, setPasswordVisible] = useState(false)
+  // Controlled, so it survives a failed attempt. React resets an action
+  // form's uncontrolled fields once the action finishes, which wiped the
+  // address along with the password and made the advisor type both again.
+  // The password is left uncontrolled on purpose: clearing it after a
+  // rejected attempt is the expected behaviour.
+  const [email, setEmail] = useState('')
 
   return (
     <form action={formAction} className="flex flex-col gap-4">
@@ -18,7 +23,16 @@ export function LoginForm() {
         <label htmlFor="email" className={LABEL_CLASS}>
           Email
         </label>
-        <input id="email" name="email" type="email" required autoComplete="username" className={FIELD_CLASS} />
+        <input
+          id="email"
+          name="email"
+          type="email"
+          required
+          autoComplete="username"
+          value={email}
+          onChange={(event) => setEmail(event.target.value)}
+          className={FIELD_CLASS}
+        />
       </div>
 
       <div className="flex flex-col gap-1.5">
@@ -58,7 +72,7 @@ export function LoginForm() {
       <button
         type="submit"
         disabled={pending}
-        className="mt-2 rounded bg-navy px-4 py-2.5 text-sm font-medium text-white hover:bg-navy-deep disabled:opacity-60"
+        className={`mt-2 ${buttonClass('primary', 'lg')}`}
       >
         {pending ? 'Signing in…' : 'Sign in'}
       </button>

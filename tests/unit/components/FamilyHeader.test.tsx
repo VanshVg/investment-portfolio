@@ -17,6 +17,7 @@ describe('FamilyHeader', () => {
   it('submits every field as one unit', async () => {
     const updateFamily = vi.fn(async () => ({ ok: true as const, id: 'f1' }))
     render(<FamilyHeader family={family} updateFamily={updateFamily} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Edit details' }))
 
     fireEvent.change(screen.getByLabelText('Family name'), { target: { value: 'Patel Family' } })
     fireEvent.click(screen.getByRole('button', { name: 'Save details' }))
@@ -36,6 +37,7 @@ describe('FamilyHeader', () => {
       fieldErrors: { assumedCagr: 'Assumed CAGR must be between 0 and 30%.' },
     }))
     render(<FamilyHeader family={family} updateFamily={updateFamily} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Edit details' }))
 
     fireEvent.change(screen.getByLabelText('Assumed CAGR (%)'), { target: { value: '99' } })
     fireEvent.click(screen.getByRole('button', { name: 'Save details' }))
@@ -49,7 +51,25 @@ describe('FamilyHeader', () => {
   it('confirms the save so the advisor knows it landed', async () => {
     const updateFamily = vi.fn(async () => ({ ok: true as const, id: 'f1' }))
     render(<FamilyHeader family={family} updateFamily={updateFamily} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Edit details' }))
     fireEvent.click(screen.getByRole('button', { name: 'Save details' }))
     await waitFor(() => expect(screen.getByText('Saved.')).toBeInTheDocument())
+  })
+  it('shows the details read-only until the advisor chooses to edit', () => {
+    render(<FamilyHeader family={family} updateFamily={vi.fn()} />)
+    expect(screen.getByText('Rakesh')).toBeInTheDocument()
+    expect(screen.getByText('+919876543210')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Family name')).not.toBeInTheDocument()
+  })
+
+  it('cancelling closes the form without saving anything', () => {
+    const updateFamily = vi.fn()
+    render(<FamilyHeader family={family} updateFamily={updateFamily} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Edit details' }))
+    fireEvent.change(screen.getByLabelText('Family name'), { target: { value: 'Changed' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+
+    expect(updateFamily).not.toHaveBeenCalled()
+    expect(screen.queryByLabelText('Family name')).not.toBeInTheDocument()
   })
 })

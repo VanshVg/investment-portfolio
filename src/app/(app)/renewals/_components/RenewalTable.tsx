@@ -4,8 +4,9 @@ import { useOptimistic, useState, useTransition } from 'react'
 import { formatDMY } from '@/lib/domain/dates'
 import { formatINR } from '@/lib/domain/money'
 import { ManagedByPill } from '@/components/ledger/ManagedByPill'
+import { buttonClass, CARD, TABLE, TABLE_HEAD_ROW, TD, TH } from '@/components/ui/styles'
 import type { ActionResult } from '@/lib/actions/result'
-import type { RenewalRow } from '@/lib/queries/renewals'
+import { daysOverdue, isOverdue, type RenewalRow } from '@/lib/queries/renewals'
 import { describeRenewalRow } from './renewal-row-description'
 import { canMarkRenewed } from './renewal-row-actions'
 
@@ -112,7 +113,7 @@ function PaymentStatusControl({
         aria-busy={pending}
         value={optimisticStatus}
         onChange={onChange}
-        className={`rounded px-1.5 py-1 text-[11.5px] font-medium ${STATUS_STYLE[optimisticStatus]} ${pending ? 'opacity-60' : ''}`}
+        className={`h-7 whitespace-nowrap rounded border px-2 text-[11.5px] font-medium ${STATUS_STYLE[optimisticStatus]} ${pending ? 'opacity-60' : ''}`}
       >
         {(Object.keys(STATUS_LABEL) as PaymentStatus[]).map((value) => (
           <option key={value} value={value}>
@@ -120,12 +121,22 @@ function PaymentStatusControl({
           </option>
         ))}
       </select>
-      {error && (
-        <p role="alert" className="mt-0.5 text-[11px] text-rust">
-          {error}
-        </p>
-      )}
+      {error && <RowError message={error} />}
     </div>
+  )
+}
+
+/**
+ * Both row controls live in columns sized to their content, where a long
+ * message would otherwise either stretch the column for every row or wrap one
+ * word per line. A fixed width keeps it readable, and it only exists while
+ * there is an error to show.
+ */
+function RowError({ message }: { message: string }) {
+  return (
+    <p role="alert" className="mt-1 w-[200px] whitespace-normal text-left text-[11px] leading-snug text-rust">
+      {message}
+    </p>
   )
 }
 
@@ -174,53 +185,84 @@ function MarkRenewedControl({
           aria-label={`Mark renewed for ${describeRenewalRow(row)}`}
           onClick={onClick}
           disabled={pending}
-          className="rounded border border-line-strong px-1.5 py-1 text-[11.5px] font-medium hover:bg-paper disabled:opacity-60"
+          className={buttonClass('secondary', 'xs')}
         >
           Mark renewed
         </button>
       )}
-      {error && (
-        <p role="alert" className="mt-0.5 text-[11px] text-rust">
-          {error}
-        </p>
-      )}
+      {error && <RowError message={error} />}
     </div>
   )
 }
 
+function OverdueBadge({ days }: { days: number }) {
+  return (
+    <span className="mt-1 block w-fit rounded-full bg-rust-bg px-1.5 py-0.5 text-[10px] font-medium text-rust">
+      {days === 1 ? '1 day overdue' : `${days} days overdue`}
+    </span>
+  )
+}
+
+/**
+ * Sizes a column to exactly its content — the same rule, and the same reason,
+ * as `SNUG` in the ledger tables (see `EditableSection.tsx`): bounded content
+ * such as a date, a figure or a control gets its own width and refuses to
+ * wrap, and the leftover goes to the two free-text columns.
+ */
+const SNUG = 'w-[1%] whitespace-nowrap'
+
+
 /**
  * The daily working list: every due date in the filtered window, one row per
  * instance.
+ *
+ * Nine separate columns do not fit the page's width, and the browser wrapped
+ * them wherever it ran short — names split across lines, the category tag
+ * broke in two, the renew button folded onto a second line. Instead, each row
+ * reads as two lines by design: the family over its member, and the holding
+ * over its category and who manages it. That leaves the bounded columns room
+ * to sit on one line.
  */
 export function RenewalTable({
   rows,
   setPaymentStatus,
   markRenewed,
+  today,
 }: {
   rows: RenewalRow[]
   setPaymentStatus: (dueInstanceId: string, status: PaymentStatus) => Promise<ActionResult>
   markRenewed: (dueInstanceId: string) => Promise<ActionResult>
+  /**
+   * The Indian calendar day, passed down from the server rather than read
+   * here: a client component taking its own "today" would render one date on
+   * the server and possibly another in the browser around midnight IST. With
+   * none given, no row is marked overdue.
+   */
+  today?: string
 }) {
   return (
-    <div className="overflow-x-auto rounded border border-line bg-paper-raised">
-      <table className="w-full border-collapse text-[12.5px]">
+    <div className={`overflow-x-auto ${CARD}`}>
+      <table className={TABLE}>
         <thead>
-          <tr className="border-b border-line text-left text-[11px] uppercase tracking-[0.04em] text-ink-soft">
-            <th className="whitespace-nowrap px-3 py-2 font-medium">Due date</th>
-            <th className="whitespace-nowrap px-3 py-2 font-medium">Family</th>
-            <th className="whitespace-nowrap px-3 py-2 font-medium">Member</th>
-            <th className="whitespace-nowrap px-3 py-2 font-medium">Holding</th>
-            <th className="whitespace-nowrap px-3 py-2 font-medium">Managed by</th>
-            <th className="whitespace-nowrap px-3 py-2 text-right font-medium">Amount due</th>
-            <th className="whitespace-nowrap px-3 py-2 font-medium">Reminders sent</th>
-            <th className="whitespace-nowrap px-3 py-2 font-medium">Paid</th>
-            <th className="whitespace-nowrap px-3 py-2 font-medium">Renew</th>
+          <tr className={TABLE_HEAD_ROW}>
+            <th className={`${TH} ${SNUG}`}>Due date</th>
+            {/* Floors, not widths: below them the table scrolls inside its
+                own container instead of crushing a family or policy name
+                onto three lines. */}
+            <th className={`${TH} min-w-[130px]`}>Client</th>
+            <th className={`${TH} min-w-[170px]`}>Holding</th>
+            <th className={`${TH} ${SNUG} text-right`}>Amount due</th>
+            <th className={`${TH} ${SNUG}`}>Reminders</th>
+            <th className={`${TH} ${SNUG}`}>Payment</th>
+            <th className={`${TH} ${SNUG}`}>
+              <span className="sr-only">Actions</span>
+            </th>
           </tr>
         </thead>
         <tbody>
           {rows.length === 0 && (
             <tr>
-              <td colSpan={9} className="px-2 py-4 text-center text-ink-soft">
+              <td colSpan={7} className="px-3 py-8 text-center text-ink-soft">
                 No renewals in this window.
               </td>
             </tr>
@@ -229,39 +271,45 @@ export function RenewalTable({
           {rows.map((row) => (
             <tr
               key={row.dueInstanceId}
-              className={`border-b border-line last:border-0 ${
-                row.managedBy === 'external' ? 'border-l-2 border-l-gold bg-gold-bg/40' : ''
+              className={`border-b border-line align-middle last:border-0 ${
+                row.managedBy === 'external'
+                  ? 'border-l-2 border-l-gold bg-gold-bg/40'
+                  : 'hover:bg-paper/50'
               }`}
             >
-              <td className="whitespace-nowrap px-3 py-2 font-mono">
-                {formatDMY(row.dueDate)}
+              <td className={`${TD} ${SNUG}`}>
+                <span className="font-mono">{formatDMY(row.dueDate)}</span>
                 {row.offSchedule && (
-                  <span className="ml-1.5 inline-block rounded-full bg-gold-bg px-1.5 py-0.5 text-[10px] font-medium text-gold">
+                  <span className="mt-1 block w-fit rounded-full bg-gold-bg px-1.5 py-0.5 text-[10px] font-medium text-gold">
                     Off schedule
                   </span>
                 )}
+                {today && isOverdue(row, today) && <OverdueBadge days={daysOverdue(row.dueDate, today)} />}
               </td>
-              <td className="px-3 py-2">{row.familyName}</td>
-              <td className="px-3 py-2">{row.memberName ?? 'Whole family'}</td>
-              <td className="px-3 py-2">
-                <span className="font-medium">{row.label}</span>
-                <span className="ml-1.5 inline-block rounded border border-line-strong px-1 py-0.5 text-[10px] uppercase tracking-[0.03em] text-ink-soft">
-                  {CATEGORY_LABELS[row.category]}
+              <td className={TD}>
+                <span className="block font-medium text-ink">{row.familyName}</span>
+                <span className="mt-0.5 block text-[11.5px] text-ink-soft">
+                  {row.memberName ?? 'Whole family'}
                 </span>
               </td>
-              <td className="px-3 py-2">
-                <ManagedByPill value={row.managedBy} />
+              <td className={TD}>
+                <span className="block font-medium text-ink">{row.label}</span>
+                <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <span className="whitespace-nowrap text-[11.5px] text-ink-soft">
+                    {CATEGORY_LABELS[row.category]}
+                  </span>
+                  <ManagedByPill value={row.managedBy} />
+                </span>
               </td>
-              <td className="px-3 py-2 text-right font-mono">{formatINR(row.amountDue)}</td>
-              <td className="px-3 py-2 font-mono text-[11.5px] text-ink-soft">
+              <td className={`${TD} ${SNUG} text-right font-mono`}>{formatINR(row.amountDue)}</td>
+              <td className={`${TD} ${SNUG} font-mono text-[11.5px] text-ink-soft`}>
                 {firedWindowsText(row.firedWindows)}
               </td>
-              <td className="px-3 py-2">
+              <td className={`${TD} ${SNUG}`}>
                 <PaymentStatusControl row={row} setPaymentStatus={setPaymentStatus} />
               </td>
-              <td className="px-3 py-2">
+              <td className={`${TD} ${SNUG} text-right`}>
                 <MarkRenewedControl row={row} markRenewed={markRenewed} />
-
               </td>
             </tr>
           ))}

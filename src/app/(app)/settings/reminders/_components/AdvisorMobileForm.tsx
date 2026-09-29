@@ -3,6 +3,14 @@
 import { useState, useTransition } from 'react'
 import type { ActionResult } from '@/lib/actions/result'
 import { FieldError, fieldErrorProps } from '@/components/ledger/FieldError'
+import {
+  buttonClass,
+  CARD,
+  FIELD_LABEL,
+  inputClass,
+  SECTION_LEAD,
+  SECTION_TITLE,
+} from '@/components/ui/styles'
 
 /**
  * The advisor's own WhatsApp number. `reminderRecipients` routes every
@@ -40,37 +48,44 @@ export function AdvisorMobileForm({
   }
 
   return (
-    <section className="rounded border border-line bg-paper-raised p-4">
-      <h2 className="font-serif text-[17px] font-semibold text-navy">Your mobile number</h2>
-      <p className="mt-0.5 text-[12.5px] text-ink-soft">
+    <section className={`${CARD} px-5 py-4`}>
+      <h2 className={SECTION_TITLE}>Your mobile number</h2>
+      <p className={SECTION_LEAD}>
         Every reminder is sent here too — including the cross-sell reminders for policies managed
         elsewhere, which the client never sees.
       </p>
-      <form onSubmit={submit} noValidate className="mt-2 flex flex-wrap items-center gap-2">
-        <label htmlFor="mobile" className="sr-only">
+      <form onSubmit={submit} noValidate className="mt-3 flex flex-col gap-1">
+        <label htmlFor="mobile" className={FIELD_LABEL}>
           Your mobile number
         </label>
-        <input
-          id="mobile"
-          value={value}
-          onChange={(event) => {
-            setValue(event.target.value)
-            setSaved(false)
-          }}
-          placeholder="98765 43210"
-          className="w-48 rounded border border-line-strong bg-white px-2 py-1.5 font-mono text-[13px]"
-          {...fieldErrorProps('mobile', errors.mobile)}
-        />
-        <button
-          type="submit"
-          disabled={pending}
-          className="rounded bg-navy px-3 py-1.5 text-[12.5px] text-white disabled:opacity-60"
-        >
-          {pending ? 'Saving…' : 'Save'}
-        </button>
-        {saved && <span className="text-[12px] text-teal">Saved.</span>}
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            id="mobile"
+            value={value}
+            onChange={(event) => {
+              setValue(event.target.value)
+              setSaved(false)
+            }}
+            placeholder="98765 43210"
+            className={`${inputClass('md', 'w-56')} font-mono`}
+            {...fieldErrorProps('mobile', errors.mobile)}
+          />
+          <button type="submit" disabled={pending} className={buttonClass('primary', 'md')}>
+            {pending ? 'Saving…' : 'Save'}
+          </button>
+          {saved && (
+            <span role="status" className="text-[12px] text-teal">
+              Saved.
+            </span>
+          )}
+        </div>
+        <FieldError id="mobile" message={errors.mobile} />
+        {!value.trim() && !errors.mobile && (
+          <p className="text-[12px] text-gold">
+            Not set yet — reminders for policies managed elsewhere have no one to go to until it is.
+          </p>
+        )}
       </form>
-      <FieldError id="mobile" message={errors.mobile} />
       {formError && (
         <p role="alert" className="mt-2 text-[12.5px] text-rust">
           {formError}

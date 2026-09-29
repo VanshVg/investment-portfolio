@@ -1,6 +1,9 @@
+import Link from 'next/link'
 import { createServerSupabase } from '@/lib/supabase/server'
 import { listFamilies } from '@/lib/queries/families'
+import { TEXT_LINK } from '@/components/ui/styles'
 import { FamilyList } from './_components/FamilyList'
+import { FamilySearch } from './_components/FamilySearch'
 import { createFamily, deleteFamily } from './actions'
 
 export default async function FamiliesPage({
@@ -9,31 +12,39 @@ export default async function FamiliesPage({
   searchParams: Promise<{ q?: string }>
 }) {
   const { q } = await searchParams
+  const search = q?.trim() || undefined
   const supabase = await createServerSupabase()
-  const { families, truncated } = await listFamilies(supabase, { search: q })
+  const { families, truncated } = await listFamilies(supabase, { search })
+
+  const toolbar = (
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+      <FamilySearch search={search} />
+      {search && (
+        <p className="text-[12.5px] text-ink-soft">
+          {families.length} {families.length === 1 ? 'match' : 'matches'} for “{search}” ·{' '}
+          <Link href="/families" className={TEXT_LINK}>
+            Clear search
+          </Link>
+        </p>
+      )}
+    </div>
+  )
 
   return (
-    <div className="pt-7">
-      <form className="mb-4">
-        <label htmlFor="q" className="sr-only">
-          Search families
-        </label>
-        <input
-          id="q"
-          name="q"
-          defaultValue={q ?? ''}
-          placeholder="Search by family, head of family, or mobile"
-          className="w-full max-w-sm rounded border border-line-strong bg-paper-raised px-2.5 py-2 text-[13px]"
-        />
-      </form>
+    <div>
+      <FamilyList
+        families={families}
+        search={search}
+        toolbar={toolbar}
+        createFamily={createFamily}
+        deleteFamily={deleteFamily}
+      />
 
       {truncated && (
-        <p className="mb-3 rounded border border-gold bg-gold-bg px-2.5 py-2 text-[12.5px] text-gold">
+        <p className="mt-3 rounded border border-gold bg-gold-bg px-3 py-2 text-[12.5px] text-gold">
           Showing the first {families.length} families. Narrow your search to see the rest.
         </p>
       )}
-
-      <FamilyList families={families} createFamily={createFamily} deleteFamily={deleteFamily} />
     </div>
   )
 }

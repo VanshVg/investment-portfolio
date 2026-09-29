@@ -1,13 +1,13 @@
 'use client'
 
 import { EditableSection, SNUG } from '@/components/ledger/EditableSection'
-import { FieldError, fieldErrorProps } from '@/components/ledger/FieldError'
+import { NumberField, TextField } from '@/components/ledger/Field'
 import { ManagedByPill } from '@/components/ledger/ManagedByPill'
 import { MemberSelect } from '@/components/ledger/MemberSelect'
 import { MoneyInput } from '@/components/ledger/MoneyInput'
 import { DateField } from '@/components/ledger/DateField'
 import { formatINR } from '@/lib/domain/money'
-import type { Holding, ManagedBy, Member } from '@/lib/queries/families'
+import type { Holding, Member } from '@/lib/queries/families'
 import type { ActionResult } from '@/lib/actions/result'
 import {
   detail,
@@ -17,9 +17,7 @@ import {
   toHoldingDraft,
   type HoldingDraft,
 } from './holding-draft'
-
-const CELL = 'w-full rounded border border-line-strong bg-white px-1.5 py-1 text-[12.5px]'
-const DETAIL_LABEL = 'text-[11px] text-ink-soft'
+import { CELL, ManagedBySelect, RemindersToggle } from './holding-fields'
 
 export function MutualFundSection({
   familyId,
@@ -40,9 +38,8 @@ export function MutualFundSection({
 
   return (
     <EditableSection<Holding, HoldingDraft>
-      index={3}
-      title="Mutual funds & goals"
-      description="Current value against the target this investment is meant to reach."
+      title="Mutual funds"
+      description="Current value against the goal each investment is meant to reach."
       columns={[
         { key: 'member', label: 'Member', width: SNUG },
         { key: 'fund', label: 'Fund' },
@@ -59,20 +56,21 @@ export function MutualFundSection({
         const goal = typeof details.target_goal === 'number' ? details.target_goal : null
         return (
           <>
-            <td className="whitespace-nowrap px-3 py-2">{nameOf(row.memberId)}</td>
-            <td className="px-3 py-2 font-medium">{row.label}</td>
-            <td className="whitespace-nowrap px-3 py-2 text-right font-mono">{formatINR(row.periodicAmount)}</td>
-            <td className="whitespace-nowrap px-3 py-2 text-right font-mono">{formatINR(row.principalAmount)}</td>
-            <td className="whitespace-nowrap px-3 py-2 text-right font-mono">{formatINR(goal)}</td>
-            <td className="whitespace-nowrap px-3 py-2">
+            <td className={`whitespace-nowrap ${CELL}`}>{nameOf(row.memberId)}</td>
+            <td className={`${CELL} font-medium`}>{row.label}</td>
+            <td className={`whitespace-nowrap ${CELL} text-right font-mono`}>{formatINR(row.periodicAmount)}</td>
+            <td className={`whitespace-nowrap ${CELL} text-right font-mono`}>{formatINR(row.principalAmount)}</td>
+            <td className={`whitespace-nowrap ${CELL} text-right font-mono`}>{formatINR(goal)}</td>
+            <td className={`whitespace-nowrap ${CELL}`}>
               <ManagedByPill value={row.managedBy} />
             </td>
           </>
         )
       }}
-      renderEdit={(draft, set, errors) => (
-        <>
-          <td className="px-3 py-2">
+      renderEdit={(draft, set, errors) => {
+        const goal = detail(draft, 'target_goal')
+        return (
+          <>
             <MemberSelect
               id="mf-member"
               label="Member"
@@ -81,21 +79,15 @@ export function MutualFundSection({
               onChange={(memberId) => set({ memberId })}
               error={errors.memberId}
             />
-          </td>
-          <td className="px-3 py-2">
-            <label htmlFor="mf-label" className="sr-only">
-              Fund name
-            </label>
-            <input
+            <TextField
               id="mf-label"
+              label="Fund name"
               value={draft.label}
-              onChange={(event) => set({ label: event.target.value })}
-              className={CELL}
-              {...fieldErrorProps('mf-label', errors.label)}
+              onChange={(label) => set({ label })}
+              error={errors.label}
+              className="md:col-span-2"
             />
-            <FieldError id="mf-label" message={errors.label} />
-          </td>
-          <td className="px-3 py-2">
+            <ManagedBySelect id="mf-managed" value={draft.managedBy} onChange={(managedBy) => set({ managedBy })} />
             <MoneyInput
               id="mf-sip"
               label="Monthly SIP"
@@ -103,8 +95,6 @@ export function MutualFundSection({
               onChange={(periodicAmount) => set({ periodicAmount })}
               error={errors.periodicAmount}
             />
-          </td>
-          <td className="px-3 py-2">
             <MoneyInput
               id="mf-value"
               label="Current value"
@@ -112,102 +102,15 @@ export function MutualFundSection({
               onChange={(principalAmount) => set({ principalAmount })}
               error={errors.principalAmount}
             />
-          </td>
-          <td className="px-3 py-2">
-            <label htmlFor="mf-goal" className="sr-only">
-              Target goal
-            </label>
-            <input
+            {/* A money figure like the two beside it, so it gets the same ₹
+                field; stored in details, where an empty goal is absent. */}
+            <MoneyInput
               id="mf-goal"
-              type="number"
-              min={0}
-              value={detail(draft, 'target_goal')}
-              onChange={(event) =>
-                set(
-                  setDetail(
-                    draft,
-                    'target_goal',
-                    event.target.value === '' ? undefined : Number(event.target.value),
-                  ),
-                )
-              }
-              className={`${CELL} text-right font-mono`}
-              {...fieldErrorProps('mf-goal', detailError(errors, 'target_goal'))}
+              label="Target goal"
+              value={goal === '' ? null : Number(goal)}
+              onChange={(value) => set(setDetail(draft, 'target_goal', value ?? undefined))}
+              error={detailError(errors, 'target_goal')}
             />
-            <FieldError id="mf-goal" message={detailError(errors, 'target_goal')} />
-          </td>
-          <td className="px-3 py-2">
-            <label htmlFor="mf-managed" className="sr-only">
-              Managed by
-            </label>
-            <select
-              id="mf-managed"
-              value={draft.managedBy}
-              onChange={(event) => set({ managedBy: event.target.value as ManagedBy })}
-              className={CELL}
-            >
-              <option value="self">With us</option>
-              <option value="external">External</option>
-            </select>
-          </td>
-        </>
-      )}
-      renderDetails={(draft, set, errors) => (
-        <>
-          <div>
-            <label htmlFor="mf-folio" className={DETAIL_LABEL}>
-              Folio number
-            </label>
-            <input
-              id="mf-folio"
-              value={detail(draft, 'folio_number')}
-              onChange={(event) => set(setDetail(draft, 'folio_number', event.target.value))}
-              className={CELL}
-              {...fieldErrorProps('mf-folio', detailError(errors, 'folio_number'))}
-            />
-            <FieldError id="mf-folio" message={detailError(errors, 'folio_number')} />
-          </div>
-          <div>
-            {/* Fund house lives in the top-level institution column, same as
-                the insurer/institution field on the other three sections —
-                not in details, which would make it the odd one out. */}
-            <label htmlFor="mf-house" className={DETAIL_LABEL}>
-              Fund house
-            </label>
-            <input
-              id="mf-house"
-              value={draft.institution}
-              onChange={(event) => set({ institution: event.target.value })}
-              className={CELL}
-            />
-          </div>
-          <div>
-            <label htmlFor="mf-horizon" className={DETAIL_LABEL}>
-              Goal horizon (years)
-            </label>
-            <input
-              id="mf-horizon"
-              type="number"
-              min={1}
-              value={detail(draft, 'goal_horizon_years')}
-              onChange={(event) =>
-                set(
-                  setDetail(
-                    draft,
-                    'goal_horizon_years',
-                    event.target.value === '' ? undefined : Number(event.target.value),
-                  ),
-                )
-              }
-              className={`${CELL} font-mono`}
-              {...fieldErrorProps('mf-horizon', detailError(errors, 'goal_horizon_years'))}
-            />
-            <FieldError id="mf-horizon" message={detailError(errors, 'goal_horizon_years')} />
-          </div>
-          <div>
-            <label htmlFor="mf-due" className={DETAIL_LABEL}>
-              Next SIP / review date
-            </label>
             <DateField
               id="mf-due"
               label="Next SIP / review date"
@@ -215,18 +118,41 @@ export function MutualFundSection({
               onChange={(nextDueDate) => set({ nextDueDate })}
               error={errors.nextDueDate}
             />
-          </div>
-          <div>
-            <label htmlFor="mf-reminders" className={`${DETAIL_LABEL} flex items-center gap-1.5`}>
-              <input
-                id="mf-reminders"
-                type="checkbox"
-                checked={draft.remindersEnabled}
-                onChange={(event) => set({ remindersEnabled: event.target.checked })}
-              />
-              Send reminders
-            </label>
-          </div>
+          </>
+        )
+      }}
+      renderDetails={(draft, set, errors) => (
+        <>
+          <TextField
+            id="mf-folio"
+            label="Folio number"
+            value={detail(draft, 'folio_number')}
+            onChange={(value) => set(setDetail(draft, 'folio_number', value))}
+            error={detailError(errors, 'folio_number')}
+            mono
+          />
+          {/* Fund house lives in the top-level institution column, same as
+              the insurer/institution field on the other three sections —
+              not in details, which would make it the odd one out. */}
+          <TextField
+            id="mf-house"
+            label="Fund house"
+            value={draft.institution}
+            onChange={(institution) => set({ institution })}
+          />
+          <NumberField
+            id="mf-horizon"
+            label="Goal horizon (years)"
+            min={1}
+            value={detail(draft, 'goal_horizon_years')}
+            onChange={(value) => set(setDetail(draft, 'goal_horizon_years', value))}
+            error={detailError(errors, 'goal_horizon_years')}
+          />
+          <RemindersToggle
+            id="mf-reminders"
+            checked={draft.remindersEnabled}
+            onChange={(remindersEnabled) => set({ remindersEnabled })}
+          />
         </>
       )}
       toDraft={toHoldingDraft}

@@ -1,14 +1,16 @@
 'use client'
 
 import { EditableSection, SNUG } from '@/components/ledger/EditableSection'
-import { FieldError, fieldErrorProps } from '@/components/ledger/FieldError'
+import { Field, TextField } from '@/components/ledger/Field'
+import { fieldErrorProps } from '@/components/ledger/FieldError'
 import { ManagedByPill } from '@/components/ledger/ManagedByPill'
 import { MemberSelect } from '@/components/ledger/MemberSelect'
 import { MoneyInput } from '@/components/ledger/MoneyInput'
 import { DateField } from '@/components/ledger/DateField'
+import { inputClass } from '@/components/ui/styles'
 import { formatINR } from '@/lib/domain/money'
 import { formatDMY } from '@/lib/domain/dates'
-import type { Holding, ManagedBy, Member } from '@/lib/queries/families'
+import type { Holding, Member } from '@/lib/queries/families'
 import type { ActionResult } from '@/lib/actions/result'
 import {
   detail,
@@ -18,9 +20,18 @@ import {
   toHoldingDraft,
   type HoldingDraft,
 } from './holding-draft'
+import { CELL, ManagedBySelect, RemindersToggle } from './holding-fields'
 
-const CELL = 'w-full rounded border border-line-strong bg-white px-1.5 py-1 text-[12.5px]'
-const DETAIL_LABEL = 'text-[11px] text-ink-soft'
+/** Stored lowercase; shown the way a person would write them. */
+const SUB_CATEGORIES: { value: string; label: string }[] = [
+  { value: 'health', label: 'Health' },
+  { value: 'vehicle', label: 'Vehicle' },
+  { value: 'other', label: 'Other' },
+]
+
+function subCategoryLabel(value: unknown): string {
+  return SUB_CATEGORIES.find((option) => option.value === value)?.label ?? '—'
+}
 
 export function GeneralInsuranceSection({
   familyId,
@@ -41,24 +52,22 @@ export function GeneralInsuranceSection({
 
   return (
     <EditableSection<Holding, HoldingDraft>
-      index={2}
-      title="General insurance — health & vehicle"
-      description="Health floaters cover the whole household; vehicle policies usually sit with one member."
+      title="General insurance"
+      description="Health and vehicle cover. Health floaters cover the whole household; vehicle policies usually sit with one member."
       columns={[
-        { key: 'category', label: 'Category', width: SNUG },
-        // This section carries one more fact than the other three, and at the
-        // page's 980px it did not fit: the snug columns take ~710px, leaving
-        // ~230px to split between policy and insured asset when the policy
-        // name alone wants ~185px. Both wrapped to three and four lines.
-        // Insured asset now rides under the policy name instead of holding a
-        // column of its own, which is also where it reads best — it qualifies
-        // the policy rather than standing beside it.
+        // Member leads, as it does in every other section, so the advisor
+        // reads "whose, then what" in the same order all the way down.
+        { key: 'member', label: 'Member', width: SNUG },
+        // This section carries two more facts than the others — category and
+        // insured asset — and at the page's width neither fits as a column:
+        // a registration number broke across two lines. Both ride on a second
+        // line under the policy name instead, which is also where they read
+        // best: they qualify the policy rather than standing beside it.
         { key: 'label', label: 'Policy' },
         { key: 'coverage', label: 'Coverage', width: SNUG, align: 'right' },
         { key: 'premium', label: 'Premium', width: SNUG, align: 'right' },
         { key: 'due', label: 'Due date', width: SNUG },
         { key: 'managed', label: 'Managed by', width: SNUG },
-        { key: 'member', label: 'Member', width: SNUG },
       ]}
       rows={holdings}
       rowKey={(row) => row.id}
@@ -68,187 +77,123 @@ export function GeneralInsuranceSection({
         const insuredAsset = String(details.insured_asset ?? '').trim()
         return (
           <>
-            <td className="whitespace-nowrap px-3 py-2 capitalize">
-              {String(details.sub_category ?? '—')}
-            </td>
-            <td className="px-3 py-2">
+            <td className={`whitespace-nowrap ${CELL}`}>{nameOf(row.memberId)}</td>
+            <td className={CELL}>
               <span className="font-medium">{row.label}</span>
-              {/* The insured asset gets its own line only when it says
-                  something the policy name does not. On a vehicle policy the
-                  two are routinely the same string — the registration number —
-                  and printing it twice is noise, not information. */}
-              {insuredAsset && insuredAsset !== row.label && (
-                <span className="mt-0.5 block text-[11.5px] text-ink-soft">{insuredAsset}</span>
-              )}
+              <span className="mt-0.5 block text-[11.5px] text-ink-soft">
+                <span>{subCategoryLabel(details.sub_category)}</span>
+                {/* The insured asset is shown only when it says something the
+                    policy name does not. On a vehicle policy the two are
+                    routinely the same string — the registration number — and
+                    printing it twice is noise, not information. */}
+                {insuredAsset && insuredAsset !== row.label && <span> · {insuredAsset}</span>}
+              </span>
             </td>
-            <td className="whitespace-nowrap px-3 py-2 text-right font-mono">{formatINR(row.principalAmount)}</td>
-            <td className="whitespace-nowrap px-3 py-2 text-right font-mono">{formatINR(row.periodicAmount)}</td>
-            <td className="whitespace-nowrap px-3 py-2 font-mono">
+            <td className={`whitespace-nowrap ${CELL} text-right font-mono`}>{formatINR(row.principalAmount)}</td>
+            <td className={`whitespace-nowrap ${CELL} text-right font-mono`}>{formatINR(row.periodicAmount)}</td>
+            <td className={`whitespace-nowrap ${CELL} font-mono`}>
               {row.nextDueDate ? formatDMY(row.nextDueDate) : '—'}
             </td>
-            <td className="whitespace-nowrap px-3 py-2">
+            <td className={`whitespace-nowrap ${CELL}`}>
               <ManagedByPill value={row.managedBy} />
             </td>
-            <td className="whitespace-nowrap px-3 py-2">{nameOf(row.memberId)}</td>
           </>
         )
       }}
       renderEdit={(draft, set, errors) => (
         <>
-          <td className="px-3 py-2">
-            <label htmlFor="gi-sub" className="sr-only">
-              Category
-            </label>
+          <MemberSelect
+            id="gi-member"
+            label="Member"
+            members={members}
+            value={draft.memberId}
+            onChange={(memberId) => set({ memberId })}
+            error={errors.memberId}
+          />
+          <Field id="gi-sub" label="Category" error={detailError(errors, 'sub_category')}>
             <select
               id="gi-sub"
               value={detail(draft, 'sub_category') || 'health'}
               onChange={(event) => set(setDetail(draft, 'sub_category', event.target.value))}
-              className={CELL}
+              className={inputClass()}
               {...fieldErrorProps('gi-sub', detailError(errors, 'sub_category'))}
             >
-              <option value="health">health</option>
-              <option value="vehicle">vehicle</option>
-              <option value="other">other</option>
+              {SUB_CATEGORIES.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
             </select>
-            <FieldError id="gi-sub" message={detailError(errors, 'sub_category')} />
-          </td>
-          <td className="px-3 py-2">
-            <label htmlFor="gi-label" className="sr-only">
-              Policy name
-            </label>
-            <input
-              id="gi-label"
-              value={draft.label}
-              onChange={(event) => set({ label: event.target.value })}
-              className={CELL}
-              {...fieldErrorProps('gi-label', errors.label)}
-            />
-            <FieldError id="gi-label" message={errors.label} />
-          </td>
-          <td className="px-3 py-2">
-            <MoneyInput
-              id="gi-coverage"
-              label="Coverage"
-              value={draft.principalAmount}
-              onChange={(principalAmount) => set({ principalAmount })}
-              error={errors.principalAmount}
-            />
-          </td>
-          <td className="px-3 py-2">
-            <MoneyInput
-              id="gi-premium"
-              label="Premium"
-              value={draft.periodicAmount}
-              onChange={(periodicAmount) => set({ periodicAmount })}
-              error={errors.periodicAmount}
-            />
-          </td>
-          <td className="px-3 py-2">
-            <DateField
-              id="gi-due"
-              label="Due date"
-              value={draft.nextDueDate}
-              onChange={(nextDueDate) => set({ nextDueDate })}
-              error={errors.nextDueDate}
-            />
-          </td>
-          <td className="px-3 py-2">
-            <label htmlFor="gi-managed" className="sr-only">
-              Managed by
-            </label>
-            <select
-              id="gi-managed"
-              value={draft.managedBy}
-              onChange={(event) => set({ managedBy: event.target.value as ManagedBy })}
-              className={CELL}
-            >
-              <option value="self">With us</option>
-              <option value="external">External</option>
-            </select>
-          </td>
-          {/* Member is set below in the details panel, where its label can
-              stay visible — this cell just keeps the column aligned with the
-              read row while editing. */}
-          <td className="px-3 py-2 text-ink-soft">{nameOf(draft.memberId)}</td>
+          </Field>
+          <TextField
+            id="gi-label"
+            label="Policy name"
+            value={draft.label}
+            onChange={(label) => set({ label })}
+            error={errors.label}
+            className="md:col-span-2"
+          />
+          <MoneyInput
+            id="gi-coverage"
+            label="Coverage"
+            value={draft.principalAmount}
+            onChange={(principalAmount) => set({ principalAmount })}
+            error={errors.principalAmount}
+          />
+          <MoneyInput
+            id="gi-premium"
+            label="Premium"
+            value={draft.periodicAmount}
+            onChange={(periodicAmount) => set({ periodicAmount })}
+            error={errors.periodicAmount}
+          />
+          <DateField
+            id="gi-due"
+            label="Due date"
+            value={draft.nextDueDate}
+            onChange={(nextDueDate) => set({ nextDueDate })}
+            error={errors.nextDueDate}
+          />
+          <ManagedBySelect id="gi-managed" value={draft.managedBy} onChange={(managedBy) => set({ managedBy })} />
         </>
       )}
       renderDetails={(draft, set, errors) => (
         <>
-          <div>
-            {/* Moved out of the row when the column was dropped. It keeps its
-                label text, so it is still found by the same name — and gains a
-                visible one, which it never had in the row. */}
-            <label htmlFor="gi-asset" className={DETAIL_LABEL}>
-              Insured asset
-            </label>
-            <input
-              id="gi-asset"
-              value={detail(draft, 'insured_asset')}
-              onChange={(event) => set(setDetail(draft, 'insured_asset', event.target.value))}
-              className={CELL}
-              {...fieldErrorProps('gi-asset', detailError(errors, 'insured_asset'))}
-            />
-            <FieldError id="gi-asset" message={detailError(errors, 'insured_asset')} />
-          </div>
-          <div>
-            <label htmlFor="gi-policy-type" className={DETAIL_LABEL}>
-              Policy type
-            </label>
-            <input
-              id="gi-policy-type"
-              value={detail(draft, 'policy_type')}
-              onChange={(event) => set(setDetail(draft, 'policy_type', event.target.value))}
-              className={CELL}
-              {...fieldErrorProps('gi-policy-type', detailError(errors, 'policy_type'))}
-            />
-            <FieldError id="gi-policy-type" message={detailError(errors, 'policy_type')} />
-          </div>
-          <div>
-            <label htmlFor="gi-policy-number" className={DETAIL_LABEL}>
-              Policy number
-            </label>
-            <input
-              id="gi-policy-number"
-              value={detail(draft, 'policy_number')}
-              onChange={(event) => set(setDetail(draft, 'policy_number', event.target.value))}
-              className={CELL}
-              {...fieldErrorProps('gi-policy-number', detailError(errors, 'policy_number'))}
-            />
-            <FieldError id="gi-policy-number" message={detailError(errors, 'policy_number')} />
-          </div>
-          <div>
-            <label htmlFor="gi-institution" className={DETAIL_LABEL}>
-              Insurer
-            </label>
-            <input
-              id="gi-institution"
-              value={draft.institution}
-              onChange={(event) => set({ institution: event.target.value })}
-              className={CELL}
-            />
-          </div>
-          <div>
-            <MemberSelect
-              id="gi-member"
-              label="Member (optional)"
-              hideLabel={false}
-              members={members}
-              value={draft.memberId}
-              onChange={(memberId) => set({ memberId })}
-              error={errors.memberId}
-            />
-          </div>
-          <div>
-            <label htmlFor="gi-reminders" className={`${DETAIL_LABEL} flex items-center gap-1.5`}>
-              <input
-                id="gi-reminders"
-                type="checkbox"
-                checked={draft.remindersEnabled}
-                onChange={(event) => set({ remindersEnabled: event.target.checked })}
-              />
-              Send reminders
-            </label>
-          </div>
+          <TextField
+            id="gi-asset"
+            label="Insured asset"
+            value={detail(draft, 'insured_asset')}
+            onChange={(value) => set(setDetail(draft, 'insured_asset', value))}
+            error={detailError(errors, 'insured_asset')}
+            placeholder="Vehicle number, or who is covered"
+          />
+          <TextField
+            id="gi-policy-type"
+            label="Policy type"
+            value={detail(draft, 'policy_type')}
+            onChange={(value) => set(setDetail(draft, 'policy_type', value))}
+            error={detailError(errors, 'policy_type')}
+            placeholder="Floater, comprehensive…"
+          />
+          <TextField
+            id="gi-policy-number"
+            label="Policy number"
+            value={detail(draft, 'policy_number')}
+            onChange={(value) => set(setDetail(draft, 'policy_number', value))}
+            error={detailError(errors, 'policy_number')}
+            mono
+          />
+          <TextField
+            id="gi-institution"
+            label="Insurer"
+            value={draft.institution}
+            onChange={(institution) => set({ institution })}
+          />
+          <RemindersToggle
+            id="gi-reminders"
+            checked={draft.remindersEnabled}
+            onChange={(remindersEnabled) => set({ remindersEnabled })}
+          />
         </>
       )}
       toDraft={toHoldingDraft}

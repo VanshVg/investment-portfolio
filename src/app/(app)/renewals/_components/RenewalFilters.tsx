@@ -4,6 +4,8 @@ import { useRouter } from 'next/navigation'
 import { addDays, endOfMonth, startOfMonth } from 'date-fns'
 import { formatDMY, fromISODate, parseDMY, toISODate, todayInIndia } from '@/lib/domain/dates'
 import type { RenewalFilters as RenewalFilterValues } from '@/lib/queries/renewals'
+import { buttonClass, CARD, FIELD_LABEL, inputClass } from '@/components/ui/styles'
+import { defaultRange } from './renewal-params'
 
 export interface FilterOption {
   id: string
@@ -13,6 +15,13 @@ export interface FilterOption {
 type Patch = Partial<
   Pick<RenewalFilterValues, 'from' | 'to' | 'managedBy' | 'familyId' | 'memberId'>
 >
+
+// One height and one label style for every control in the bar, so the
+// buttons, date inputs and selects line up along a single baseline.
+const LABEL = `mb-1 block ${FIELD_LABEL}`
+const input = (width: string) => inputClass('sm', width)
+const BUTTON_IDLE = buttonClass('secondary', 'sm')
+const BUTTON_ACTIVE = buttonClass('primary', 'sm')
 
 const PRESETS: { label: string; days: number }[] = [
   { label: 'Next 30 days', days: 30 },
@@ -59,13 +68,27 @@ export function RenewalFilters({
   // Counted from the Indian date, matching the server's default range, so a
   // preset and the page's own opening window never disagree about today.
   function applyPreset(days: number) {
+    go(presetRange(days))
+  }
+
+  function thisMonthRange() {
     const today = fromISODate(todayInIndia())!
-    go({ from: toISODate(today), to: toISODate(addDays(today, days)) })
+    return { from: toISODate(startOfMonth(today)), to: toISODate(endOfMonth(today)) }
   }
 
   function applyThisMonth() {
+    go(thisMonthRange())
+  }
+
+  // A preset is shown as selected only when the URL's range is exactly the
+  // one it would produce, so a custom range lights none of them.
+  function isCurrent(range: { from: string; to: string }) {
+    return filters.from === range.from && filters.to === range.to
+  }
+
+  function presetRange(days: number) {
     const today = fromISODate(todayInIndia())!
-    go({ from: toISODate(startOfMonth(today)), to: toISODate(endOfMonth(today)) })
+    return { from: toISODate(today), to: toISODate(addDays(today, days)) }
   }
 
   function applyCustomRange(event: React.FormEvent<HTMLFormElement>) {
@@ -78,120 +101,149 @@ export function RenewalFilters({
   }
 
   const rangeKey = `${filters.from}_${filters.to}`
+  const thisMonthCurrent = isCurrent(thisMonthRange())
+
+  // Offered only when there is something to clear. A bare /renewals is
+  // exactly the page's default view — parseRenewalParams fills in the same
+  // defaultRange — so clearing is navigating there, not rebuilding defaults
+  // here that could drift from the server's.
+  const onDefaults =
+    isCurrent(defaultRange()) && !filters.managedBy && !filters.familyId && !filters.memberId
 
   return (
-    <div className="flex flex-wrap items-end gap-4 rounded border border-line bg-paper-raised p-3">
-      <div className="flex flex-wrap gap-1.5">
-        {PRESETS.map((preset) => (
-          <button
-            key={preset.label}
-            type="button"
-            onClick={() => applyPreset(preset.days)}
-            className="rounded border border-line-strong px-2 py-1 text-[11.5px] hover:bg-paper"
-          >
-            {preset.label}
+    <div className={CARD}>
+      <div className="flex flex-wrap items-end gap-x-6 gap-y-3 p-3">
+        <div role="group" aria-labelledby="renewals-period">
+          <span id="renewals-period" className={LABEL}>
+            Period
+          </span>
+          <div className="flex flex-wrap gap-1.5">
+            {PRESETS.map((preset) => {
+              const current = isCurrent(presetRange(preset.days))
+              return (
+                <button
+                  key={preset.label}
+                  type="button"
+                  aria-pressed={current}
+                  onClick={() => applyPreset(preset.days)}
+                  className={`${current ? BUTTON_ACTIVE : BUTTON_IDLE}`}
+                >
+                  {preset.label}
+                </button>
+              )
+            })}
+            <button
+              type="button"
+              aria-pressed={thisMonthCurrent}
+              onClick={applyThisMonth}
+              className={`${thisMonthCurrent ? BUTTON_ACTIVE : BUTTON_IDLE}`}
+            >
+              This month
+            </button>
+          </div>
+        </div>
+
+        {/* Keyed to the current range so the uncontrolled inputs remount (and
+            therefore re-adopt their defaultValue) whenever a preset or a page
+            navigation changes the filters out from under this component. */}
+        <form key={rangeKey} onSubmit={applyCustomRange} className="flex items-end gap-2">
+          <div>
+            <label htmlFor="renewals-from" className={LABEL}>
+              From
+            </label>
+            <input
+              id="renewals-from"
+              name="from"
+              defaultValue={formatDMY(filters.from)}
+              placeholder="DD-MM-YYYY"
+              className={`${input('w-[116px]')} font-mono`}
+            />
+          </div>
+          <div>
+            <label htmlFor="renewals-to" className={LABEL}>
+              To
+            </label>
+            <input
+              id="renewals-to"
+              name="to"
+              defaultValue={formatDMY(filters.to)}
+              placeholder="DD-MM-YYYY"
+              className={`${input('w-[116px]')} font-mono`}
+            />
+          </div>
+          <button type="submit" className={BUTTON_IDLE}>
+            Apply
           </button>
-        ))}
-        <button
-          type="button"
-          onClick={applyThisMonth}
-          className="rounded border border-line-strong px-2 py-1 text-[11.5px] hover:bg-paper"
-        >
-          This month
-        </button>
+        </form>
       </div>
 
-      {/* Keyed to the current range so the uncontrolled inputs remount (and
-          therefore re-adopt their defaultValue) whenever a preset or a page
-          navigation changes the filters out from under this component. */}
-      <form key={rangeKey} onSubmit={applyCustomRange} className="flex items-end gap-1.5">
+      <div className="flex flex-wrap items-end gap-x-4 gap-y-3 border-t border-line p-3">
         <div>
-          <label htmlFor="renewals-from" className="block text-[11px] text-ink-soft">
-            From
-          </label>
-          <input
-            id="renewals-from"
-            name="from"
-            defaultValue={formatDMY(filters.from)}
-            placeholder="DD-MM-YYYY"
-            className="w-[100px] rounded border border-line-strong bg-white px-1.5 py-1 font-mono text-[12.5px]"
-          />
-        </div>
-        <div>
-          <label htmlFor="renewals-to" className="block text-[11px] text-ink-soft">
-            To
-          </label>
-          <input
-            id="renewals-to"
-            name="to"
-            defaultValue={formatDMY(filters.to)}
-            placeholder="DD-MM-YYYY"
-            className="w-[100px] rounded border border-line-strong bg-white px-1.5 py-1 font-mono text-[12.5px]"
-          />
-        </div>
-        <button
-          type="submit"
-          className="rounded border border-line-strong px-2 py-1 text-[11.5px] hover:bg-paper"
-        >
-          Apply
-        </button>
-      </form>
-
-      <div>
-        <label htmlFor="renewals-managed-by" className="block text-[11px] text-ink-soft">
-          Managed by
-        </label>
-        <select
-          id="renewals-managed-by"
-          value={filters.managedBy ?? ''}
-          onChange={(event) => go({ managedBy: (event.target.value || undefined) as 'self' | 'external' | undefined })}
-          className="rounded border border-line-strong bg-white px-1.5 py-1 text-[12.5px]"
-        >
-          <option value="">All</option>
-          <option value="self">With us</option>
-          <option value="external">External</option>
-        </select>
-      </div>
-
-      <div>
-        <label htmlFor="renewals-family" className="block text-[11px] text-ink-soft">
-          Family
-        </label>
-        <select
-          id="renewals-family"
-          value={filters.familyId ?? ''}
-          onChange={(event) => go({ familyId: event.target.value || undefined, memberId: undefined })}
-          className="rounded border border-line-strong bg-white px-1.5 py-1 text-[12.5px]"
-        >
-          <option value="">All families</option>
-          {families.map((family) => (
-            <option key={family.id} value={family.id}>
-              {family.name}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      {filters.familyId && (
-        <div>
-          <label htmlFor="renewals-member" className="block text-[11px] text-ink-soft">
-            Member
+          <label htmlFor="renewals-managed-by" className={LABEL}>
+            Managed by
           </label>
           <select
-            id="renewals-member"
-            value={filters.memberId ?? ''}
-            onChange={(event) => go({ memberId: event.target.value || undefined })}
-            className="rounded border border-line-strong bg-white px-1.5 py-1 text-[12.5px]"
+            id="renewals-managed-by"
+            value={filters.managedBy ?? ''}
+            onChange={(event) => go({ managedBy: (event.target.value || undefined) as 'self' | 'external' | undefined })}
+            className={input('w-[140px]')}
           >
-            <option value="">All members</option>
-            {members.map((member) => (
-              <option key={member.id} value={member.id}>
-                {member.name}
+            <option value="">All</option>
+            <option value="self">With us</option>
+            <option value="external">External</option>
+          </select>
+        </div>
+
+        <div>
+          <label htmlFor="renewals-family" className={LABEL}>
+            Family
+          </label>
+          <select
+            id="renewals-family"
+            value={filters.familyId ?? ''}
+            onChange={(event) => go({ familyId: event.target.value || undefined, memberId: undefined })}
+            className={input('w-[220px]')}
+          >
+            <option value="">All families</option>
+            {families.map((family) => (
+              <option key={family.id} value={family.id}>
+                {family.name}
               </option>
             ))}
           </select>
         </div>
-      )}
+
+        {filters.familyId && (
+          <div>
+            <label htmlFor="renewals-member" className={LABEL}>
+              Member
+            </label>
+            <select
+              id="renewals-member"
+              value={filters.memberId ?? ''}
+              onChange={(event) => go({ memberId: event.target.value || undefined })}
+              className={input('w-[200px]')}
+            >
+              <option value="">All members</option>
+              {members.map((member) => (
+                <option key={member.id} value={member.id}>
+                  {member.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {!onDefaults && (
+          <button
+            type="button"
+            onClick={() => router.push('/renewals')}
+            className={`ml-auto ${buttonClass('quiet', 'sm')}`}
+          >
+            Clear filters
+          </button>
+        )}
+      </div>
     </div>
   )
 }

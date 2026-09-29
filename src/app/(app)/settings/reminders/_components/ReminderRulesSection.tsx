@@ -3,6 +3,17 @@
 import { useState, useTransition } from 'react'
 import type { ActionResult } from '@/lib/actions/result'
 import { FieldError, fieldErrorProps } from '@/components/ledger/FieldError'
+import {
+  buttonClass,
+  CARD,
+  inputClass,
+  SECTION_LEAD,
+  SECTION_TITLE,
+  TABLE,
+  TABLE_HEAD_ROW,
+  TD,
+  TH,
+} from '@/components/ui/styles'
 
 const CATEGORY_LABELS: Record<string, string> = {
   life_insurance: 'Life insurance',
@@ -52,12 +63,12 @@ function Row({
   const activeId = `${rule.id}-isActive`
 
   return (
-    <tr className="border-b border-line last:border-0 align-top">
-      <td className="whitespace-nowrap px-2 py-2 font-medium">
+    <tr className="border-b border-line align-middle last:border-0">
+      <td className={`${TD} w-[1%] whitespace-nowrap font-medium`}>
         {CATEGORY_LABELS[rule.category] ?? rule.category}
       </td>
-      <td className="px-2 py-2">
-        <form onSubmit={submit} noValidate className="flex flex-wrap items-center gap-2">
+      <td className={TD}>
+        <form onSubmit={submit} noValidate className="flex flex-wrap items-center gap-x-4 gap-y-2">
           <label htmlFor={daysId} className="sr-only">
             Days before due date, comma-separated
           </label>
@@ -69,10 +80,10 @@ function Row({
               setSaved(false)
             }}
             placeholder="30, 15"
-            className="w-36 rounded border border-line-strong bg-white px-2 py-1 font-mono text-[12.5px]"
+            className={`${inputClass('sm', 'w-40')} font-mono`}
             {...fieldErrorProps(daysId, errors.daysBefore)}
           />
-          <label htmlFor={activeId} className="flex items-center gap-1.5 text-[12px] text-ink-soft">
+          <label htmlFor={activeId} className="flex items-center gap-2 text-[12.5px] text-ink">
             <input
               id={activeId}
               type="checkbox"
@@ -81,17 +92,18 @@ function Row({
                 setIsActive(event.target.checked)
                 setSaved(false)
               }}
+              className="h-4 w-4"
             />
             Active
           </label>
-          <button
-            type="submit"
-            disabled={pending}
-            className="rounded bg-navy px-2.5 py-1 text-[12px] text-white disabled:opacity-60"
-          >
+          <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>
             {pending ? 'Saving…' : 'Save'}
           </button>
-          {saved && <span className="text-[12px] text-teal">Saved.</span>}
+          {saved && (
+            <span role="status" className="text-[12px] text-teal">
+              Saved.
+            </span>
+          )}
           <FieldError id={daysId} message={errors.daysBefore} />
           {formError && (
             <span role="alert" className="text-[12px] text-rust">
@@ -119,18 +131,19 @@ export function ReminderRulesSection({
   updateReminderRule: (id: string, input: unknown) => Promise<ActionResult>
 }) {
   return (
-    <section className="mt-8">
-      <h2 className="font-serif text-[17px] font-semibold text-navy">Reminder windows</h2>
-      <p className="mt-0.5 text-[12.5px] text-ink-soft">
-        Days before the due date each category&apos;s reminders fire, widest first. 0 means
-        &quot;remind on the due date itself.&quot;
+    <section className="mt-10">
+      <h2 className={SECTION_TITLE}>Reminder windows</h2>
+      <p className={SECTION_LEAD}>
+        How many days before the due date each category&apos;s reminders fire, separated by
+        commas — for example <span className="font-mono">30, 15</span>. 0 means &quot;on the due
+        date itself.&quot;
       </p>
-      <div className="mt-2 overflow-x-auto rounded border border-line bg-paper-raised">
-        <table className="w-full border-collapse text-[12.5px]">
+      <div className={`mt-3 overflow-x-auto ${CARD}`}>
+        <table className={TABLE}>
           <thead>
-            <tr className="border-b border-line text-left text-[11px] uppercase tracking-[0.04em] text-ink-soft">
-              <th className="px-2 py-1.5 font-medium">Category</th>
-              <th className="px-2 py-1.5 font-medium">Reminder windows (days before)</th>
+            <tr className={TABLE_HEAD_ROW}>
+              <th className={TH}>Category</th>
+              <th className={TH}>Days before due date</th>
             </tr>
           </thead>
           <tbody>
