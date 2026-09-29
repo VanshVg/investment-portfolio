@@ -14,6 +14,7 @@ const members = [
     mobile: '+919876543210',
     whatsappConsent: true,
     whatsappConsentAt: '2026-01-01T00:00:00Z',
+    removed: false,
   },
 ]
 

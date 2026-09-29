@@ -1,5 +1,6 @@
 import { addDays, addMonths } from 'date-fns'
 import { expect, test, type Page } from '@playwright/test'
+import { purgeE2EHouseholds } from './cleanup'
 
 const EMAIL = process.env.SEED_ADMIN_EMAIL ?? 'hiral@example.test'
 const PASSWORD = process.env.SEED_ADMIN_PASSWORD ?? ''
@@ -83,6 +84,8 @@ async function deleteFamily(page: Page, name: string) {
   await dialog.getByRole('button', { name: 'Delete' }).click()
   await expect(page.getByRole('link', { name, exact: true })).toHaveCount(0)
 }
+
+test.afterAll(purgeE2EHouseholds)
 
 test('finds an upcoming renewal by filtering the window', async ({ page }) => {
   const FAMILY = `E2E-RenewalWindow-${Date.now()}`

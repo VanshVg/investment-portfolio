@@ -3,7 +3,7 @@
 import { EditableSection, SNUG } from '@/components/ledger/EditableSection'
 import { NumberField, TextField } from '@/components/ledger/Field'
 import { ManagedByPill } from '@/components/ledger/ManagedByPill'
-import { MemberSelect } from '@/components/ledger/MemberSelect'
+import { MemberSelect, memberName } from '@/components/ledger/MemberSelect'
 import { MoneyInput } from '@/components/ledger/MoneyInput'
 import { DateField } from '@/components/ledger/DateField'
 import { formatINR } from '@/lib/domain/money'
@@ -34,7 +34,7 @@ export function MutualFundSection({
   updateHolding: (id: string, familyId: string, input: unknown) => Promise<ActionResult>
   deleteHolding: (id: string, familyId: string) => Promise<ActionResult>
 }) {
-  const nameOf = (id: string | null) => members.find((m) => m.id === id)?.name ?? 'Whole family'
+  const nameOf = (id: string | null) => memberName(members, id)
 
   return (
     <EditableSection<Holding, HoldingDraft>
@@ -171,7 +171,7 @@ export function MutualFundSection({
       onDelete={(id) => deleteHolding(id, familyId)}
       deleteConfirm={(row) => ({
         title: `Delete ${row.label}?`,
-        body: 'This removes the holding and every reminder logged against it. It cannot be undone.',
+        body: 'This hides the holding and stops its reminders. You can restore it from Deleted items.',
       })}
       addLabel="Add holding"
       emptyMessage="No mutual fund holdings recorded."

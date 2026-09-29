@@ -152,4 +152,35 @@ describe('profiles row-level security', () => {
     const { data } = await admin.from('profiles').select('id').eq('id', user!.id)
     expect(data).toHaveLength(1)
   })
+  // D1 hardening: there is exactly one admin, created deliberately by the
+  // seed script with role 'admin' in its metadata. Any other path that
+  // creates an account without saying what it is must get no access, not
+  // full access — the old default minted an admin.
+  it('gives an account created without a role no access, rather than admin', async () => {
+    const email = 'rls-no-role@example.test'
+    const admin = adminClient()
+    const { data: before } = await admin.auth.admin.listUsers()
+    const stale = before?.users.find((u) => u.email === email)
+    if (stale) await admin.auth.admin.deleteUser(stale.id)
+
+    const { data: created, error: createError } = await admin.auth.admin.createUser({
+      email,
+      password: PASSWORD,
+      email_confirm: true,
+      user_metadata: { full_name: 'No Role' },
+    })
+    expect(createError).toBeNull()
+
+    try {
+      const client = await signedInClient(email, PASSWORD)
+      const { data: profile } = await client.from('profiles').select('role').single()
+      expect(profile?.role).toBe('client')
+
+      const { data: families, error } = await client.from('families').select('id')
+      expect(error).toBeNull()
+      expect(families).toEqual([])
+    } finally {
+      if (created?.user) await admin.auth.admin.deleteUser(created.user.id)
+    }
+  })
 })

@@ -74,9 +74,14 @@ export async function runReminderSweep(
        holdings!inner (
          id, category, managed_by, reminders_enabled, member_id, next_due_date,
          families!inner ( id, owner_advisor_id, profiles:owner_advisor_id ( mobile ) ),
-         family_members ( mobile, whatsapp_consent )
+         family_members ( mobile, whatsapp_consent, deleted_at )
        )`,
     )
+    // A deleted holding, or anything in a deleted household, reminds no one
+    // (decision D2) — a "deleted" policy that kept producing reminders would
+    // be the worst possible way for a soft delete to leak.
+    .is('holdings.deleted_at', null)
+    .is('holdings.families.deleted_at', null)
     .gte('due_date', today)
     .lte('due_date', horizon)
     .eq('holdings.reminders_enabled', true)
@@ -102,9 +107,12 @@ export async function runReminderSweep(
       const holding = instance.holdings as JoinedRow
       const family = holding.families as JoinedRow
       const advisor = family.profiles as { mobile: string | null } | null
-      const member = holding.family_members as
-        | { mobile: string | null; whatsapp_consent: boolean }
+      const attributed = holding.family_members as
+        | { mobile: string | null; whatsapp_consent: boolean; deleted_at: string | null }
         | null
+      // A removed member keeps their policies, but is never messaged about
+      // them: routing treats them as absent, so the advisor alone is told.
+      const member = attributed && attributed.deleted_at === null ? attributed : null
 
       const dueDateISO = instance.due_date as string
       const nextDueDate = holding.next_due_date as string | null

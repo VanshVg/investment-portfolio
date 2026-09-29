@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/db/types.generated'
 import { todayInIndia } from '@/lib/domain/dates'
 import { dueDatesBetween } from '@/lib/domain/due-schedule'
+import { amountDueFor } from './amount-due'
 
 export interface EnsureResult {
   created: number
@@ -35,7 +36,9 @@ export async function ensureDueInstances(
 ): Promise<EnsureResult> {
   const { data: holding, error } = await client
     .from('holdings')
-    .select('id, anchor_due_date, next_due_date, due_frequency, periodic_amount')
+    .select(
+      'id, category, anchor_due_date, next_due_date, due_frequency, periodic_amount, principal_amount, details',
+    )
     .eq('id', holdingId)
     .maybeSingle()
   if (error) throw new Error(`ensureDueInstances: reading holding failed: ${error.message}`)
@@ -46,6 +49,7 @@ export async function ensureDueInstances(
   if (!holding.anchor_due_date || !holding.next_due_date) return NOTHING
 
   const today = todayInIndia()
+  const expectedAmount = amountDueFor(holding)
 
   // Two windows over the same grid, deliberately different. Generation starts
   // at next_due_date, so it never invents a date the holding has already
@@ -78,7 +82,7 @@ export async function ensureDueInstances(
         dates.map((due_date) => ({
           holding_id: holdingId,
           due_date,
-          amount_due: holding.periodic_amount,
+          amount_due: expectedAmount,
         })),
         { onConflict: 'holding_id,due_date', ignoreDuplicates: true },
       )
@@ -113,30 +117,29 @@ export async function ensureDueInstances(
     offScheduleCleared = cleared?.length ?? 0
   }
 
-  // A null periodic_amount means the holding has no recurring premium (a
-  // fixed deposit, say), not that every instance owes nothing. Refreshing to
-  // null would erase an amount set by hand, by the seed or by an importer, so
-  // the refresh only ever writes a real amount.
-  const periodicAmount = holding.periodic_amount
-  if (dates.length > 0 && periodicAmount !== null) {
+  // A null amount means nothing is known to be owed (no premium entered),
+  // not that every instance owes nothing. Refreshing to null would erase an
+  // amount set by hand, by the seed or by an importer, so the refresh only
+  // ever writes a real amount. See amountDueFor for what counts as owed.
+  if (dates.length > 0 && expectedAmount !== null) {
     // Step 3 — refresh amount_due on rows that are in the generated schedule,
     // not in the past (today counts as not-past), and pristine (no payment
     // status recorded, no note): a past instance records what was actually
     // owed, and one the advisor has ticked or annotated is evidence. Neither
     // may be rewritten. Also scoped to rows whose amount actually differs from
-    // the holding's current periodic_amount, so a steady-state run matches
+    // the holding's current amount due, so a steady-state run matches
     // nothing and `refreshed` means "changed," not "matched." amount_due is
     // nullable and `neq` does not match nulls, so a null amount is matched
     // explicitly.
     const { data: refreshedRows, error: refreshError } = await client
       .from('due_instances')
-      .update({ amount_due: periodicAmount })
+      .update({ amount_due: expectedAmount })
       .eq('holding_id', holdingId)
       .in('due_date', dates)
       .gte('due_date', today)
       .eq('payment_status', 'unknown')
       .is('note', null)
-      .or(`amount_due.is.null,amount_due.neq.${periodicAmount}`)
+      .or(`amount_due.is.null,amount_due.neq.${expectedAmount}`)
       .select('id')
     if (refreshError) {
       throw new Error(`ensureDueInstances: refreshing instances failed: ${refreshError.message}`)

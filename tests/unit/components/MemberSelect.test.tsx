@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
-import { MemberSelect } from '@/components/ledger/MemberSelect'
+import { MemberSelect, memberName } from '@/components/ledger/MemberSelect'
 import type { Member } from '@/lib/queries/families'
 
 function makeMember(id: string, name: string): Member {
@@ -13,6 +13,7 @@ function makeMember(id: string, name: string): Member {
     mobile: null,
     whatsappConsent: false,
     whatsappConsentAt: null,
+    removed: false,
   }
 }
 
@@ -50,5 +51,29 @@ describe('MemberSelect', () => {
     expect(describedBy).toBe('member-error')
     expect(screen.getByRole('alert')).toHaveAttribute('id', describedBy as string)
     expect(screen.getByRole('alert')).toHaveTextContent('Required.')
+  })
+  describe('removed members (decision D2)', () => {
+    const everyone: Member[] = [
+      makeMember('m1', 'Hiral'),
+      { ...makeMember('m2', 'Aarav'), removed: true },
+    ]
+    const options = () => screen.getAllByRole('option').map((o) => o.textContent)
+
+    it('does not offer a removed member for a new assignment', () => {
+      render(<MemberSelect id="member" label="Member" members={everyone} value={null} onChange={() => {}} />)
+      expect(options()).toEqual(['Whole family', 'Hiral'])
+    })
+
+    it('keeps a removed member on a holding already theirs, marked as removed', () => {
+      render(<MemberSelect id="member" label="Member" members={everyone} value="m2" onChange={() => {}} />)
+      expect(options()).toEqual(['Whole family', 'Hiral', 'Aarav (removed)'])
+      expect(screen.getByLabelText('Member')).toHaveValue('m2')
+    })
+
+    it('names a removed member as removed, and no member as the whole family', () => {
+      expect(memberName(everyone, 'm2')).toBe('Aarav (removed)')
+      expect(memberName(everyone, 'm1')).toBe('Hiral')
+      expect(memberName(everyone, null)).toBe('Whole family')
+    })
   })
 })

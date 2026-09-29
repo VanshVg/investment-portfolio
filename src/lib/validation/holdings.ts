@@ -3,6 +3,7 @@ import {
   amountRules,
   isoDateRules,
   MAX_LENGTH,
+  optionalDetailAmount,
   optionalDetailText,
   optionalText,
   optionalYears,
@@ -49,6 +50,9 @@ export const mutualFundDetails = z
 export const fixedIncomeDetails = z
   .object({
     asset_type: requiredText('Asset type', MAX_LENGTH.short),
+    // What the deposit pays out on maturity; the renewals page shows it as
+    // the amount due, falling back to the amount invested (decision D4).
+    maturity_amount: optionalDetailAmount(),
     maturity_date: isoDate.optional(),
     // No deposit or bond pays half its principal a year; 50% catches "750"
     // typed for 7.50 without rejecting anything real.

@@ -4,7 +4,7 @@ import { EditableSection, SNUG } from '@/components/ledger/EditableSection'
 import { Field, TextField } from '@/components/ledger/Field'
 import { fieldErrorProps } from '@/components/ledger/FieldError'
 import { ManagedByPill } from '@/components/ledger/ManagedByPill'
-import { MemberSelect } from '@/components/ledger/MemberSelect'
+import { MemberSelect, memberName } from '@/components/ledger/MemberSelect'
 import { MoneyInput } from '@/components/ledger/MoneyInput'
 import { DateField } from '@/components/ledger/DateField'
 import { inputClass } from '@/components/ui/styles'
@@ -48,7 +48,7 @@ export function GeneralInsuranceSection({
   updateHolding: (id: string, familyId: string, input: unknown) => Promise<ActionResult>
   deleteHolding: (id: string, familyId: string) => Promise<ActionResult>
 }) {
-  const nameOf = (id: string | null) => members.find((m) => m.id === id)?.name ?? 'Whole family'
+  const nameOf = (id: string | null) => memberName(members, id)
 
   return (
     <EditableSection<Holding, HoldingDraft>
@@ -213,7 +213,7 @@ export function GeneralInsuranceSection({
       onDelete={(id) => deleteHolding(id, familyId)}
       deleteConfirm={(row) => ({
         title: `Delete ${row.label}?`,
-        body: 'This removes the policy and every reminder logged against it. It cannot be undone.',
+        body: 'This hides the policy and stops its reminders. You can restore it from Deleted items.',
       })}
       addLabel="Add policy"
       emptyMessage="No general insurance recorded."

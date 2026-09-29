@@ -5,16 +5,20 @@ import { todayInIndia } from '@/lib/domain/dates'
 // row-level security. Its two collaborators — reconciliation and the sweep —
 // each have their own exhaustive suites against the live database
 // (reconcile-due-instances.test.ts, ensure-due-instances.test.ts,
-// sweep.test.ts). Mocking both here, along with the admin client's own
-// holdings read, keeps this suite to what the route itself is responsible
+// sweep.test.ts), and the live-holdings read that feeds reconciliation is
+// covered against the database in soft-delete.test.ts. Mocking all three
+// here keeps this suite to what the route itself is responsible
 // for: the secret gate, calling each collaborator the right number of times
 // with the right arguments, and shaping the response. None of that touches
 // the live database, so this suite cannot race another suite's fixtures or
 // mutate the seeded household — the failure mode this file used to have.
-const { mockReconcileDueInstances, mockRunReminderSweep } = vi.hoisted(() => ({
-  mockReconcileDueInstances: vi.fn(),
-  mockRunReminderSweep: vi.fn(),
-}))
+const { mockReconcileDueInstances, mockRunReminderSweep, mockListLiveHoldingIds } = vi.hoisted(
+  () => ({
+    mockReconcileDueInstances: vi.fn(),
+    mockRunReminderSweep: vi.fn(),
+    mockListLiveHoldingIds: vi.fn(),
+  }),
+)
 
 const FAKE_HOLDING_IDS = ['fixture-holding-a', 'fixture-holding-b', 'fixture-holding-c']
 
@@ -24,18 +28,15 @@ vi.mock('@/lib/reminders/reconcile', () => ({
 vi.mock('@/lib/reminders/sweep', () => ({
   runReminderSweep: mockRunReminderSweep,
 }))
+vi.mock('@/lib/reminders/live-holdings', () => ({
+  listLiveHoldingIds: mockListLiveHoldingIds,
+}))
+// The route reads through its collaborators only; a direct table read from
+// the route itself would bypass the soft-delete filter they apply.
 vi.mock('@/lib/supabase/admin', () => ({
   createAdminSupabase: () => ({
     from: (table: string) => {
-      if (table !== 'holdings') {
-        throw new Error(`cron-reminders route unexpectedly queried table "${table}"`)
-      }
-      return {
-        select: async () => ({
-          data: FAKE_HOLDING_IDS.map((id) => ({ id })),
-          error: null,
-        }),
-      }
+      throw new Error(`cron-reminders route unexpectedly queried table "${table}" directly`)
     },
   }),
 }))
@@ -59,6 +60,7 @@ describe('GET /api/cron/reminders', () => {
       refreshed: 0,
     })
     mockRunReminderSweep.mockReset().mockResolvedValue(SWEEP_RESULT)
+    mockListLiveHoldingIds.mockReset().mockResolvedValue(FAKE_HOLDING_IDS)
   })
 
   it('rejects a request with no secret and calls neither collaborator', async () => {

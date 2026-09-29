@@ -56,6 +56,8 @@ export interface Member {
   mobile: string | null
   whatsappConsent: boolean
   whatsappConsentAt: string | null
+  /** Soft-deleted (decision D2). Only ever true when asked for with includeRemoved. */
+  removed: boolean
 }
 
 export interface Holding {
@@ -101,9 +103,11 @@ export async function listFamilies(
   let query = client
     .from('families')
     .select(
-      'id, name, head_name, head_mobile, family_members(count), holdings(next_due_date, reminders_enabled)',
+      'id, name, head_name, head_mobile, family_members(deleted_at), holdings(next_due_date, reminders_enabled, deleted_at)',
       { count: 'exact' },
     )
+    // Soft-deleted households are hidden everywhere (decision D2).
+    .is('deleted_at', null)
     .order('name', { ascending: true })
     .range(0, maxRows - 1)
 
@@ -118,8 +122,18 @@ export async function listFamilies(
   type Row = Record<string, unknown>
 
   const families = (data ?? []).map((row: Row) => {
-    const members = (row.family_members ?? []) as { count: number }[]
-    const holdings = (row.holdings ?? []) as { next_due_date: string | null; reminders_enabled: boolean }[]
+    // Counted here rather than with an embedded count(), so a removed member
+    // or deleted holding does not inflate the figures on the list.
+    const members = ((row.family_members ?? []) as { deleted_at: string | null }[]).filter(
+      (m) => m.deleted_at === null,
+    )
+    const holdings = (
+      (row.holdings ?? []) as {
+        next_due_date: string | null
+        reminders_enabled: boolean
+        deleted_at: string | null
+      }[]
+    ).filter((h) => h.deleted_at === null)
 
     // Only reminding holdings can produce a due date Hiral will be chased about.
     const dueDates = holdings
@@ -132,7 +146,7 @@ export async function listFamilies(
       name: row.name as string,
       headName: (row.head_name as string) ?? null,
       headMobile: (row.head_mobile as string) ?? null,
-      memberCount: members[0]?.count ?? 0,
+      memberCount: members.length,
       holdingCount: holdings.length,
       nextDueDate: dueDates[0] ?? null,
     }
@@ -149,6 +163,8 @@ export async function getFamily(
     .from('families')
     .select('id, name, head_name, head_mobile, notes, goal_horizon_years, assumed_cagr')
     .eq('id', familyId)
+    // A deleted household opens as not found, exactly like one that never was.
+    .is('deleted_at', null)
     .maybeSingle()
 
   // A malformed id cannot name a household, so it reads as absent rather than
@@ -170,16 +186,24 @@ export async function getFamily(
   }
 }
 
+/**
+ * The household's members. Removed members are left out by default; pass
+ * `includeRemoved` where a name is still needed for the holdings that stay
+ * attributed to a removed member (decision D2).
+ */
 export async function listMembers(
   client: SupabaseClient<Database>,
   familyId: string,
+  { includeRemoved = false }: { includeRemoved?: boolean } = {},
 ): Promise<Member[]> {
-  const { data, error } = await client
+  let query = client
     .from('family_members')
-    .select('id, family_id, name, relation, mobile, whatsapp_consent, whatsapp_consent_at')
+    .select('id, family_id, name, relation, mobile, whatsapp_consent, whatsapp_consent_at, deleted_at')
     .eq('family_id', familyId)
     .order('created_at', { ascending: true })
+  if (!includeRemoved) query = query.is('deleted_at', null)
 
+  const { data, error } = await query
   if (error) throw new Error(`member listing failed: ${error.message}`)
 
   return (data ?? []).map((row) => ({
@@ -190,6 +214,7 @@ export async function listMembers(
     mobile: row.mobile,
     whatsappConsent: row.whatsapp_consent,
     whatsappConsentAt: row.whatsapp_consent_at,
+    removed: row.deleted_at !== null,
   }))
 }
 
@@ -205,6 +230,7 @@ export async function listHoldings(
        due_frequency, reminders_enabled, details`,
     )
     .eq('family_id', familyId)
+    .is('deleted_at', null)
     .order('created_at', { ascending: true })
 
   if (error) throw new Error(`holding listing failed: ${error.message}`)

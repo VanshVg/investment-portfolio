@@ -54,6 +54,8 @@ export async function updateFamily(id: string, input: unknown): Promise<ActionRe
       assumed_cagr: parsed.data.assumedCagr,
     })
     .eq('id', id)
+    // A household deleted in another tab is not edited back into view.
+    .is('deleted_at', null)
     .select('id')
 
   if (error) return fromPostgrestError(error)
@@ -66,16 +68,26 @@ export async function updateFamily(id: string, input: unknown): Promise<ActionRe
 
 export async function deleteFamily(id: string): Promise<ActionResult> {
   const supabase = await createServerSupabase()
-  // Cascades to members, holdings, due instances, reminder rules and the
-  // reminder log. This is the DPDP erasure path, so it is a hard delete.
-  // RLS applies its USING clause to DELETE as a row filter, not an error, so
-  // a blocked delete comes back as `{ error: null }` with the row intact —
-  // `.select('id')` is required to tell that apart from an actual delete,
-  // which matters enormously on the path that is supposed to prove erasure.
-  const { data, error } = await supabase.from('families').delete().eq('id', id).select('id')
+  // A soft delete (decision D2): the household is stamped and hidden, never
+  // destroyed, and can be restored from Deleted items. Its members and
+  // holdings are left untouched — every read hides them through the family —
+  // so a restore brings back exactly what was there. The reminder sweep skips
+  // it from the next run.
+  // RLS applies its USING clause to UPDATE as a row filter, not an error, so
+  // `.select('id')` is required to tell a real delete from RLS silently
+  // keeping the row; the deleted_at filter makes a second delete a no-op
+  // that reports itself rather than re-stamping the time.
+  const { data, error } = await supabase
+    .from('families')
+    .update({ deleted_at: new Date().toISOString() })
+    .eq('id', id)
+    .is('deleted_at', null)
+    .select('id')
   if (error) return fromPostgrestError(error)
   if (!data || data.length === 0) return fromEmptyWrite()
 
   revalidatePath('/families')
+  revalidatePath('/renewals')
+  revalidatePath('/deleted')
   return { ok: true, id }
 }

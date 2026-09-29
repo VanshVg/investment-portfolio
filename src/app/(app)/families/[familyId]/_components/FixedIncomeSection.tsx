@@ -3,7 +3,7 @@
 import { EditableSection, SNUG } from '@/components/ledger/EditableSection'
 import { Field, NumberField, TextField } from '@/components/ledger/Field'
 import { ManagedByPill } from '@/components/ledger/ManagedByPill'
-import { MemberSelect } from '@/components/ledger/MemberSelect'
+import { MemberSelect, memberName } from '@/components/ledger/MemberSelect'
 import { MoneyInput } from '@/components/ledger/MoneyInput'
 import { DateField } from '@/components/ledger/DateField'
 import { inputClass } from '@/components/ui/styles'
@@ -45,7 +45,7 @@ export function FixedIncomeSection({
   updateHolding: (id: string, familyId: string, input: unknown) => Promise<ActionResult>
   deleteHolding: (id: string, familyId: string) => Promise<ActionResult>
 }) {
-  const nameOf = (id: string | null) => members.find((m) => m.id === id)?.name ?? 'Whole family'
+  const nameOf = (id: string | null) => memberName(members, id)
 
   return (
     <EditableSection<Holding, HoldingDraft>
@@ -145,6 +145,16 @@ export function FixedIncomeSection({
       )}
       renderDetails={(draft, set, errors) => (
         <>
+          {/* What the deposit pays out; the renewals page shows it as the
+              amount due, falling back to the amount invested when left
+              blank (decision D4). */}
+          <MoneyInput
+            id="fi-maturity-amount"
+            label="Maturity amount"
+            value={detail(draft, 'maturity_amount') === '' ? null : Number(detail(draft, 'maturity_amount'))}
+            onChange={(value) => set(setDetail(draft, 'maturity_amount', value ?? undefined))}
+            error={detailError(errors, 'maturity_amount')}
+          />
           <NumberField
             id="fi-rate"
             label="Interest rate (%)"
@@ -204,7 +214,7 @@ export function FixedIncomeSection({
       onDelete={(id) => deleteHolding(id, familyId)}
       deleteConfirm={(row) => ({
         title: `Delete ${row.label}?`,
-        body: 'This removes the holding and every reminder logged against it. It cannot be undone.',
+        body: 'This hides the holding and stops its reminders. You can restore it from Deleted items.',
       })}
       addLabel="Add holding"
       emptyMessage="No fixed income holdings recorded."
