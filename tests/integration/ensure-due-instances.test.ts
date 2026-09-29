@@ -416,4 +416,51 @@ describe('ensureDueInstances', () => {
     const result = await ensureDueInstances(admin, undatedHoldingId, THROUGH)
     expect(result).toEqual({ created: 0, refreshed: 0, offScheduleCleared: 0 })
   })
+  // Decision D4: a maturity shows the maturity amount on the renewals page,
+  // or the amount invested when none is entered. Before, a fixed income
+  // instance was generated with no amount at all, because only the premium
+  // column (which a deposit never has) was read.
+  describe('fixed income maturity amount', () => {
+    async function depositWith(details: Record<string, unknown>) {
+      const { data, error } = await admin
+        .from('holdings')
+        .insert({
+          family_id: familyId,
+          category: 'fixed_income',
+          label: 'Maturity amount fixture',
+          due_frequency: 'one_time',
+          principal_amount: 1_000_000,
+          anchor_due_date: FUTURE_DUE,
+          next_due_date: FUTURE_DUE,
+          details,
+        })
+        .select('id')
+        .single()
+      if (error) throw new Error(error.message)
+      return data!.id as string
+    }
+
+    it('records the maturity amount the advisor entered', async () => {
+      const id = await depositWith({ asset_type: 'FD', maturity_amount: 1_070_000 })
+      await ensureDueInstances(admin, id, THROUGH)
+      expect(await amountFor(id, FUTURE_DUE)).toBe(1_070_000)
+    })
+
+    it('falls back to the amount invested when no maturity amount is entered', async () => {
+      const id = await depositWith({ asset_type: 'FD' })
+      await ensureDueInstances(admin, id, THROUGH)
+      expect(await amountFor(id, FUTURE_DUE)).toBe(1_000_000)
+    })
+
+    it('follows a changed maturity amount on an untouched future instance', async () => {
+      const id = await depositWith({ asset_type: 'FD', maturity_amount: 1_070_000 })
+      await ensureDueInstances(admin, id, THROUGH)
+      await admin
+        .from('holdings')
+        .update({ details: { asset_type: 'FD', maturity_amount: 1_075_000 } })
+        .eq('id', id)
+      await ensureDueInstances(admin, id, THROUGH)
+      expect(await amountFor(id, FUTURE_DUE)).toBe(1_075_000)
+    })
+  })
 })

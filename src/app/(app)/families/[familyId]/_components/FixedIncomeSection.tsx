@@ -145,6 +145,16 @@ export function FixedIncomeSection({
       )}
       renderDetails={(draft, set, errors) => (
         <>
+          {/* What the deposit pays out; the renewals page shows it as the
+              amount due, falling back to the amount invested when left
+              blank (decision D4). */}
+          <MoneyInput
+            id="fi-maturity-amount"
+            label="Maturity amount"
+            value={detail(draft, 'maturity_amount') === '' ? null : Number(detail(draft, 'maturity_amount'))}
+            onChange={(value) => set(setDetail(draft, 'maturity_amount', value ?? undefined))}
+            error={detailError(errors, 'maturity_amount')}
+          />
           <NumberField
             id="fi-rate"
             label="Interest rate (%)"

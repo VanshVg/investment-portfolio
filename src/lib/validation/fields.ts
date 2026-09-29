@@ -82,6 +82,11 @@ export function requiredDetailAmount(label: string) {
   return z.number({ error: `${label} is required.` }).superRefine(amountRules)
 }
 
+/** An optional amount held in `details` (a deposit's maturity amount). */
+export function optionalDetailAmount() {
+  return z.number({ error: 'Enter an amount.' }).superRefine(amountRules).optional()
+}
+
 /** Whole years within a range, optional, for details such as a policy term. */
 export function optionalYears(label: string, min: number, max: number) {
   return z
