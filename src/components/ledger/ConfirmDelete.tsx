@@ -1,6 +1,7 @@
 'use client'
 
 import { useId, useState } from 'react'
+import { buttonClass, FIELD_LABEL, inputClass } from '@/components/ui/styles'
 
 /**
  * Consequences are stated before the fact, and the destructive cases require the
@@ -11,12 +12,17 @@ export function ConfirmDelete({
   title,
   body,
   requireTyping,
+  error,
+  pending,
   onConfirm,
   onCancel,
 }: {
   title: string
   body: string
   requireTyping?: string
+  /** A rejected delete, shown inside the dialog it belongs to. */
+  error?: string | null
+  pending?: boolean
   onConfirm: () => void
   onCancel: () => void
 }) {
@@ -25,34 +31,45 @@ export function ConfirmDelete({
   const nameId = useId()
 
   return (
-    <div role="dialog" aria-label={title} className="rounded border border-rust bg-rust-bg p-3">
-      <p className="font-medium text-rust">{title}</p>
-      <p className="mt-1 text-[12.5px] text-ink">{body}</p>
+    <div
+      role="dialog"
+      aria-label={title}
+      className="rounded border border-rust/50 border-l-4 border-l-rust bg-rust-bg px-4 py-3.5"
+    >
+      <p className="text-[13.5px] font-semibold text-rust">{title}</p>
+      <p className="mt-1 max-w-[70ch] text-[12.5px] leading-relaxed text-ink">{body}</p>
 
       {requireTyping && (
-        <div className="mt-2">
-          <label htmlFor={nameId} className="text-[11px] text-ink-soft">
-            Type <strong>{requireTyping}</strong> to confirm
+        <div className="mt-3 flex max-w-sm flex-col gap-1">
+          <label htmlFor={nameId} className={FIELD_LABEL}>
+            Type <strong className="normal-case tracking-normal text-ink">{requireTyping}</strong> to
+            confirm
           </label>
           <input
             id={nameId}
             value={typed}
             onChange={(event) => setTyped(event.target.value)}
-            className="mt-1 w-full rounded border border-line-strong bg-white px-2 py-1 text-[12.5px]"
+            className={inputClass('sm')}
           />
         </div>
       )}
 
-      <div className="mt-3 flex gap-2">
+      {error && (
+        <p role="alert" className="mt-2 text-[12.5px] text-rust">
+          {error}
+        </p>
+      )}
+
+      <div className="mt-3.5 flex gap-2">
         <button
           type="button"
-          disabled={!armed}
+          disabled={!armed || pending}
           onClick={onConfirm}
-          className="rounded bg-rust px-3 py-1.5 text-[12.5px] text-white disabled:opacity-50"
+          className={buttonClass('danger', 'sm')}
         >
-          Delete
+          {pending ? 'Deleting…' : 'Delete'}
         </button>
-        <button type="button" onClick={onCancel} className="rounded px-3 py-1.5 text-[12.5px] underline">
+        <button type="button" onClick={onCancel} className={buttonClass('secondary', 'sm')}>
           Cancel
         </button>
       </div>

@@ -25,3 +25,24 @@ body {
   background: var(--paper);
   color: var(--ink);
 }
+
+/* One keyboard focus ring for every control in the app, shown only for
+   keyboard focus, so a mouse click never leaves a box behind. */
+:focus-visible {
+  outline: 2px solid var(--navy);
+  outline-offset: 2px;
+}
+
+/* A checkbox in the brand colour rather than the browser's default blue. */
+input[type='checkbox'] {
+  accent-color: var(--navy);
+}
+
+/* Search fields draw their own clear button (see FamilySearch), so the
+   browser's native one, which differs per browser and ignores our padding,
+   is switched off. */
+input[type='search']::-webkit-search-cancel-button,
+input[type='search']::-webkit-search-decoration {
+  -webkit-appearance: none;
+  appearance: none;
+}

@@ -1,7 +1,18 @@
 'use client'
 
-import { useEffect, useRef, useState, useTransition } from 'react'
+import { Fragment, useEffect, useRef, useState, useTransition } from 'react'
 import type { ActionResult } from '@/lib/actions/result'
+import {
+  buttonClass,
+  CARD,
+  PAGE_LEAD,
+  PAGE_TITLE,
+  SECTION_LEAD,
+  SECTION_TITLE,
+  TABLE,
+  TABLE_HEAD_ROW,
+  TH,
+} from '@/components/ui/styles'
 import { ConfirmDelete } from './ConfirmDelete'
 
 /**
@@ -46,8 +57,14 @@ type Mode<T> = { kind: 'idle' } | { kind: 'new' } | { kind: 'edit'; row: T }
 
 export interface EditableSectionProps<T, D> {
   title: string
-  index?: number
   description?: string
+  /**
+   * 1 when this section is the page itself (the families list), so its title
+   * is the page's h1 and its add button the page's primary action.
+   */
+  headingLevel?: 1 | 2
+  /** Rendered between the heading and the table, e.g. a search box. */
+  toolbar?: React.ReactNode
   columns: Column[]
   rows: T[]
   rowKey: (row: T) => string
@@ -87,8 +104,9 @@ export interface EditableSectionProps<T, D> {
  */
 export function EditableSection<T, D>({
   title,
-  index,
   description,
+  headingLevel = 2,
+  toolbar,
   columns,
   rows,
   rowKey,
@@ -208,19 +226,92 @@ export function EditableSection<T, D>({
   const editing = mode.kind !== 'idle' && draft !== null
   const editingId = mode.kind === 'edit' ? rowKey(mode.row) : null
   const colSpan = columns.length + 1
+  const confirmingId = confirming ? rowKey(confirming) : null
+  const Heading = headingLevel === 1 ? 'h1' : 'h2'
+
+  // The editor opens in the place of the row it edits, not at the foot of the
+  // table: a row that jumps to the bottom the moment Edit is clicked makes
+  // the advisor hunt for what they just picked. A new row opens at the top,
+  // directly under the Add button that opened it.
+  function editorRow() {
+    if (!editing || draft === null) return null
+    return (
+      <tr ref={editorRef} onKeyDown={onKeyDown} className="border-b border-line last:border-0">
+        <td colSpan={colSpan} className="p-0">
+          <div className="border-l-[3px] border-l-navy bg-[#fbfaf6] px-4 py-4">
+            <p className="mb-3 text-[12px] font-semibold uppercase tracking-[0.05em] text-navy">
+              {mode.kind === 'edit' ? `Editing ${rowLabel(mode.row)}` : addLabel}
+            </p>
+            {/* Every field is laid out with its label on show, instead of
+                being squeezed into the column it is displayed in — a member
+                name cut to "Rajesl" or a date cut to "15-03-20" is not
+                something the advisor can check before saving. */}
+            <div className="grid grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-2 md:grid-cols-4">
+              {renderEdit(draft, set, errors)}
+            </div>
+            {renderDetails && (
+              <div className="mt-4 border-t border-line pt-3">
+                <p className="mb-2 text-[11px] font-medium uppercase tracking-[0.05em] text-ink-soft">
+                  More details
+                </p>
+                <div className="grid grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-2 md:grid-cols-4">
+                  {renderDetails(draft, set, errors)}
+                </div>
+              </div>
+            )}
+            {formError && (
+              <p role="alert" className="mt-3 text-[12.5px] text-rust">
+                {formError}
+              </p>
+            )}
+            <div className="mt-4 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={save}
+                disabled={pending}
+                className={buttonClass('primary', 'sm')}
+              >
+                {pending ? 'Saving…' : 'Save'}
+              </button>
+              <button type="button" onClick={cancel} className={buttonClass('secondary', 'sm')}>
+                Cancel
+              </button>
+              <span className="ml-1 text-[11.5px] text-ink-soft">Enter to save · Esc to cancel</span>
+            </div>
+          </div>
+        </td>
+      </tr>
+    )
+  }
 
   return (
-    <section className="mt-8">
-      <h2 className="font-serif text-[17px] font-semibold text-navy">
-        {index !== undefined && <span className="mr-1.5 text-gold">{index}.</span>}
-        {title}
-      </h2>
-      {description && <p className="mt-0.5 text-[12.5px] text-ink-soft">{description}</p>}
+    <section className={headingLevel === 1 ? '' : 'mt-10'}>
+      <div
+        className={`flex flex-wrap items-end justify-between gap-x-6 gap-y-3 ${
+          headingLevel === 1 ? 'pb-5 pt-7' : ''
+        }`}
+      >
+        <div className="min-w-0">
+          <Heading className={headingLevel === 1 ? PAGE_TITLE : SECTION_TITLE}>{title}</Heading>
+          {description && (
+            <p className={headingLevel === 1 ? PAGE_LEAD : SECTION_LEAD}>{description}</p>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={() => requestOpen({ kind: 'new' })}
+          className={headingLevel === 1 ? buttonClass('primary', 'md') : buttonClass('secondary', 'sm')}
+        >
+          + {addLabel}
+        </button>
+      </div>
 
-      <div className="mt-2 overflow-x-auto rounded border border-line bg-paper-raised">
-        <table className="w-full border-collapse text-[12.5px]">
+      {toolbar && <div className="mt-3">{toolbar}</div>}
+
+      <div className={`mt-3 overflow-x-auto ${CARD}`}>
+        <table className={TABLE}>
           <thead>
-            <tr className="border-b border-line text-left text-[11px] uppercase tracking-[0.04em] text-ink-soft">
+            <tr className={TABLE_HEAD_ROW}>
               {columns.map((column) => (
                 // Headers never wrap. A two-line header pushes the whole row
                 // taller and puts the column's name further from its data than
@@ -228,9 +319,7 @@ export function EditableSection<T, D>({
                 <th
                   key={column.key}
                   style={{ width: column.width }}
-                  className={`whitespace-nowrap px-3 py-2 font-medium ${
-                    column.align === 'right' ? 'text-right' : ''
-                  }`}
+                  className={`${TH} ${column.align === 'right' ? 'text-right' : ''}`}
                 >
                   {column.label}
                 </th>
@@ -238,13 +327,17 @@ export function EditableSection<T, D>({
               {/* Snug like any other bounded column, or it competes with the
                   free-text column for the leftover and the slack lands in two
                   places instead of one. */}
-              <th style={{ width: SNUG }} className="px-3 py-2" />
+              <th style={{ width: SNUG }} className={TH}>
+                <span className="sr-only">Actions</span>
+              </th>
             </tr>
           </thead>
           <tbody>
+            {mode.kind === 'new' && editorRow()}
+
             {rows.length === 0 && !editing && (
               <tr>
-                <td colSpan={colSpan} className="px-3 py-4 text-center text-ink-soft">
+                <td colSpan={colSpan} className="px-3 py-8 text-center text-ink-soft">
                   {emptyMessage}
                 </td>
               </tr>
@@ -252,102 +345,76 @@ export function EditableSection<T, D>({
 
             {rows.map((row) => {
               const id = rowKey(row)
-              if (id === editingId) return null
+              if (id === editingId) return <Fragment key={id}>{editorRow()}</Fragment>
               const label = rowLabel(row)
 
               return (
-                <tr key={id} className="border-b border-line last:border-0">
-                  {renderRead(row)}
-                  {/* Both buttons read as plain verbs on screen and carry the
-                      row's name only in their accessible name. The name has to
-                      stay there: every row renders the same two verbs, so
-                      without it a screen reader announces a column of identical
-                      "Delete" buttons, and a test locator matches every row's
-                      at once instead of one — a bare "Delete" once matched over
-                      a thousand elements here. Keep it as aria-label rather
-                      than hidden text, which would duplicate the name already
-                      shown in the row and make it ambiguous to match. */}
-                  <td className="whitespace-nowrap px-3 py-2 text-right">
-                    {editable && (
-                      <button
-                        type="button"
-                        aria-label={`Edit ${label}`}
-                        onClick={() => requestOpen({ kind: 'edit', row })}
-                        className="underline hover:text-navy"
-                      >
-                        Edit
-                      </button>
-                    )}
-                    {/* Delete is offered only where its consequences can be
-                        stated — an unexplained destructive action is worse
-                        than no action. */}
-                    {deleteConfirm && (
-                      <button
-                        type="button"
-                        aria-label={`Delete ${label}`}
-                        onClick={() => setConfirming(row)}
-                        className="ml-3 underline hover:text-rust"
-                      >
-                        Delete
-                      </button>
-                    )}
-                  </td>
-                </tr>
+                <Fragment key={id}>
+                  <tr className="border-b border-line last:border-0 hover:bg-paper/40">
+                    {renderRead(row)}
+                    {/* Both buttons read as plain verbs on screen and carry the
+                        row's name only in their accessible name. The name has to
+                        stay there: every row renders the same two verbs, so
+                        without it a screen reader announces a column of identical
+                        "Delete" buttons, and a test locator matches every row's
+                        at once instead of one — a bare "Delete" once matched over
+                        a thousand elements here. Keep it as aria-label rather
+                        than hidden text, which would duplicate the name already
+                        shown in the row and make it ambiguous to match. */}
+                    <td className="whitespace-nowrap px-2 py-1.5 text-right">
+                      {editable && (
+                        <button
+                          type="button"
+                          aria-label={`Edit ${label}`}
+                          onClick={() => requestOpen({ kind: 'edit', row })}
+                          className={buttonClass('quiet', 'xs')}
+                        >
+                          Edit
+                        </button>
+                      )}
+                      {/* Delete is offered only where its consequences can be
+                          stated — an unexplained destructive action is worse
+                          than no action. */}
+                      {deleteConfirm && (
+                        <button
+                          type="button"
+                          aria-label={`Delete ${label}`}
+                          onClick={() => {
+                            setFormError(null)
+                            setConfirming(row)
+                          }}
+                          className={`${buttonClass('quiet', 'xs')} hover:!bg-rust-bg hover:!text-rust`}
+                        >
+                          Delete
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                  {/* The confirmation opens under the row it would delete,
+                      not below the whole table, so there is no doubt which
+                      record it is about. */}
+                  {id === confirmingId && deleteConfirm && confirming && (
+                    <tr className="border-b border-line last:border-0">
+                      <td colSpan={colSpan} className="p-2">
+                        <ConfirmDelete
+                          {...deleteConfirm(confirming)}
+                          error={editing ? null : formError}
+                          pending={pending}
+                          onConfirm={() => remove(confirming)}
+                          onCancel={() => {
+                            setFormError(null)
+                            setConfirming(null)
+                          }}
+                        />
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
               )
             })}
-
-            {editing && (
-              <tr ref={editorRef} onKeyDown={onKeyDown} className="border-b border-line bg-[#fcfbf8]">
-                {renderEdit(draft, set, errors)}
-                <td className="whitespace-nowrap px-3 py-2 text-right">
-                  <button type="button" onClick={save} disabled={pending} className="underline">
-                    {pending ? 'Saving…' : 'Save'}
-                  </button>
-                  <button type="button" onClick={cancel} className="ml-3 underline">
-                    Cancel
-                  </button>
-                </td>
-              </tr>
-            )}
-
-            {editing && renderDetails && (
-              // Same key handling as the editor row: the detail fields are part
-              // of the same commit unit, so Enter and Escape must work in them.
-              <tr onKeyDown={onKeyDown} className="border-b border-line bg-[#fcfbf8]">
-                <td colSpan={colSpan} className="px-3 pb-3">
-                  <div className="grid grid-cols-2 gap-x-4 gap-y-2 md:grid-cols-4">
-                    {renderDetails(draft, set, errors)}
-                  </div>
-                </td>
-              </tr>
-            )}
           </tbody>
         </table>
       </div>
-
-      {formError && (
-        <p role="alert" className="mt-2 text-[12.5px] text-rust">
-          {formError}
-        </p>
-      )}
-
-      {confirming && deleteConfirm && (
-        <div className="mt-2">
-          <ConfirmDelete
-            {...deleteConfirm(confirming)}
-            onConfirm={() => remove(confirming)}
-            onCancel={() => setConfirming(null)}
-          />
-        </div>
-      )}
-
-      <button
-        type="button"
-        onClick={() => requestOpen({ kind: 'new' })}
-        className="mt-2 text-[12.5px] text-navy underline"
-      >
-        + {addLabel}
-      </button>
     </section>
   )
 }

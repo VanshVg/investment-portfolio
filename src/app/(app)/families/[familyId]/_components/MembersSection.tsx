@@ -1,10 +1,12 @@
 'use client'
 
 import { EditableSection, SNUG } from '@/components/ledger/EditableSection'
-import { FieldError, fieldErrorProps } from '@/components/ledger/FieldError'
+import { CheckboxField, Field, TextField } from '@/components/ledger/Field'
+import { inputClass } from '@/components/ui/styles'
 import { memberRelations } from '@/lib/validation/members'
 import type { Member, MemberRelation } from '@/lib/queries/families'
 import type { ActionResult } from '@/lib/actions/result'
+import { CELL } from './holding-fields'
 
 interface Draft {
   name: string
@@ -13,7 +15,10 @@ interface Draft {
   whatsappConsent: boolean
 }
 
-const CELL = 'w-full rounded border border-line-strong bg-white px-1.5 py-1 text-[12.5px]'
+/** Stored lowercase; shown capitalised, as the read row already shows them. */
+function relationLabel(relation: string): string {
+  return relation.charAt(0).toUpperCase() + relation.slice(1)
+}
 
 export function MembersSection({
   familyId,
@@ -45,89 +50,74 @@ export function MembersSection({
       rowLabel={(row) => row.name}
       renderRead={(row) => (
         <>
-          <td className="px-3 py-2 font-medium">{row.name}</td>
-          <td className="whitespace-nowrap px-3 py-2 capitalize">{row.relation}</td>
-          <td className="whitespace-nowrap px-3 py-2 font-mono">{row.mobile ?? '—'}</td>
-          <td className="whitespace-nowrap px-3 py-2">
+          <td className={`${CELL} font-medium`}>{row.name}</td>
+          <td className={`whitespace-nowrap ${CELL}`}>{relationLabel(row.relation)}</td>
+          <td className={`whitespace-nowrap ${CELL} font-mono`}>{row.mobile ?? '—'}</td>
+          <td className={`whitespace-nowrap ${CELL}`}>
             {row.whatsappConsent ? (
-              <span className="rounded-full bg-teal-bg px-2 py-0.5 text-[11px] text-teal">
+              <span className="inline-block rounded-full bg-teal-bg px-2 py-0.5 text-[11px] font-medium text-teal">
                 Consented
               </span>
             ) : (
-              <span className="text-ink-soft">Not consented</span>
+              <span className="text-[12px] text-ink-soft">Not consented</span>
             )}
           </td>
         </>
       )}
-      renderEdit={(draft, set, errors) => (
-        <>
-          <td className="px-3 py-2">
-            <label htmlFor="member-name" className="sr-only">
-              Name
-            </label>
-            <input
+      renderEdit={(draft, set, errors) => {
+        const noMobile = draft.mobile.trim() === ''
+        return (
+          <>
+            <TextField
               id="member-name"
+              label="Name"
               value={draft.name}
-              onChange={(event) => set({ name: event.target.value })}
-              className={CELL}
-              {...fieldErrorProps('member-name', errors.name)}
+              onChange={(name) => set({ name })}
+              error={errors.name}
+              className="md:col-span-2"
             />
-            <FieldError id="member-name" message={errors.name} />
-          </td>
-          <td className="px-3 py-2">
-            <label htmlFor="member-relation" className="sr-only">
-              Relation
-            </label>
-            <select
-              id="member-relation"
-              value={draft.relation}
-              onChange={(event) => set({ relation: event.target.value as MemberRelation })}
-              className={CELL}
-            >
-              {memberRelations.map((relation) => (
-                <option key={relation} value={relation}>
-                  {relation}
-                </option>
-              ))}
-            </select>
-          </td>
-          <td className="px-3 py-2">
-            <label htmlFor="member-mobile" className="sr-only">
-              Mobile
-            </label>
-            <input
+            <Field id="member-relation" label="Relation">
+              <select
+                id="member-relation"
+                value={draft.relation}
+                onChange={(event) => set({ relation: event.target.value as MemberRelation })}
+                className={inputClass()}
+              >
+                {memberRelations.map((relation) => (
+                  <option key={relation} value={relation}>
+                    {relationLabel(relation)}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <TextField
               id="member-mobile"
+              label="Mobile"
               value={draft.mobile}
               placeholder="98765 43210"
-              onChange={(event) =>
+              mono
+              onChange={(mobile) =>
                 // Clearing the number must clear consent too, or the row would
                 // be rejected by the check constraint on save.
                 set({
-                  mobile: event.target.value,
-                  whatsappConsent: event.target.value.trim() === '' ? false : draft.whatsappConsent,
+                  mobile,
+                  whatsappConsent: mobile.trim() === '' ? false : draft.whatsappConsent,
                 })
               }
-              className={`${CELL} font-mono`}
-              {...fieldErrorProps('member-mobile', errors.mobile)}
+              error={errors.mobile}
             />
-            <FieldError id="member-mobile" message={errors.mobile} />
-          </td>
-          <td className="px-3 py-2">
-            <label htmlFor="member-consent" className="flex items-center gap-1.5 text-[12px]">
-              <input
-                id="member-consent"
-                type="checkbox"
-                checked={draft.whatsappConsent}
-                disabled={draft.mobile.trim() === ''}
-                onChange={(event) => set({ whatsappConsent: event.target.checked })}
-                {...fieldErrorProps('member-consent', errors.whatsappConsent)}
-              />
-              WhatsApp consent
-            </label>
-            <FieldError id="member-consent" message={errors.whatsappConsent} />
-          </td>
-        </>
-      )}
+            <CheckboxField
+              id="member-consent"
+              label="WhatsApp consent"
+              checked={draft.whatsappConsent}
+              disabled={noMobile}
+              hint={noMobile ? 'Add a mobile number first.' : undefined}
+              onChange={(whatsappConsent) => set({ whatsappConsent })}
+              error={errors.whatsappConsent}
+            />
+          </>
+        )
+      }}
       toDraft={(row) => ({
         name: row.name,
         relation: row.relation,

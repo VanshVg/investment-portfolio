@@ -230,6 +230,8 @@ describe('FamilyHeader error slots', () => {
         updateFamily={updateFamily}
       />,
     )
+    // The details are read-only until the advisor opens the form.
+    fireEvent.click(screen.getByRole('button', { name: 'Edit details' }))
     fireEvent.click(screen.getByRole('button', { name: 'Save details' }))
 
     await expectEveryErrorVisible(fieldErrors)

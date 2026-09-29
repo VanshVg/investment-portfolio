@@ -1,14 +1,15 @@
 'use client'
 
 import { EditableSection, SNUG } from '@/components/ledger/EditableSection'
-import { FieldError, fieldErrorProps } from '@/components/ledger/FieldError'
+import { Field, NumberField, TextField } from '@/components/ledger/Field'
 import { ManagedByPill } from '@/components/ledger/ManagedByPill'
 import { MemberSelect } from '@/components/ledger/MemberSelect'
 import { MoneyInput } from '@/components/ledger/MoneyInput'
 import { DateField } from '@/components/ledger/DateField'
+import { inputClass } from '@/components/ui/styles'
 import { formatINR } from '@/lib/domain/money'
 import { formatDMY } from '@/lib/domain/dates'
-import type { DueFrequency, Holding, ManagedBy, Member } from '@/lib/queries/families'
+import type { DueFrequency, Holding, Member } from '@/lib/queries/families'
 import type { ActionResult } from '@/lib/actions/result'
 import {
   detail,
@@ -18,9 +19,16 @@ import {
   toHoldingDraft,
   type HoldingDraft,
 } from './holding-draft'
+import { CELL, ManagedBySelect, RemindersToggle } from './holding-fields'
 
-const CELL = 'w-full rounded border border-line-strong bg-white px-1.5 py-1 text-[12.5px]'
-const DETAIL_LABEL = 'text-[11px] text-ink-soft'
+/** The stored enum values, shown as words rather than identifiers. */
+const FREQUENCIES: { value: DueFrequency; label: string }[] = [
+  { value: 'one_time', label: 'One-time (matures once)' },
+  { value: 'annual', label: 'Annual' },
+  { value: 'half_yearly', label: 'Half-yearly' },
+  { value: 'quarterly', label: 'Quarterly' },
+  { value: 'monthly', label: 'Monthly' },
+]
 
 export function FixedIncomeSection({
   familyId,
@@ -41,13 +49,14 @@ export function FixedIncomeSection({
 
   return (
     <EditableSection<Holding, HoldingDraft>
-      index={4}
-      title="Fixed income, bonds & demat"
-      description="Maturity dates drive reminders here exactly as renewal dates do for insurance."
+      title="Fixed income"
+      description="Deposits, bonds and demat holdings. Maturity dates drive reminders here exactly as renewal dates do for insurance."
       columns={[
         { key: 'member', label: 'Member', width: SNUG },
+        // Asset type rides under the description rather than in a column of
+        // its own: the two are often near-identical ("Bank fixed deposit"),
+        // and side by side they squeezed the description onto two lines.
         { key: 'label', label: 'Description' },
-        { key: 'asset', label: 'Asset type', width: SNUG },
         { key: 'institution', label: 'Institution', width: SNUG },
         { key: 'amount', label: 'Invested', width: SNUG, align: 'right' },
         { key: 'maturity', label: 'Maturity', width: SNUG },
@@ -58,17 +67,23 @@ export function FixedIncomeSection({
       rowLabel={(row) => row.label}
       renderRead={(row) => {
         const details = (row.details ?? {}) as Record<string, unknown>
+        const assetType = String(details.asset_type ?? '').trim()
         return (
           <>
-            <td className="whitespace-nowrap px-3 py-2">{nameOf(row.memberId)}</td>
-            <td className="px-3 py-2 font-medium">{row.label}</td>
-            <td className="whitespace-nowrap px-3 py-2">{String(details.asset_type ?? '—')}</td>
-            <td className="whitespace-nowrap px-3 py-2">{row.institution ?? '—'}</td>
-            <td className="whitespace-nowrap px-3 py-2 text-right font-mono">{formatINR(row.principalAmount)}</td>
-            <td className="whitespace-nowrap px-3 py-2 font-mono">
+            <td className={`whitespace-nowrap ${CELL}`}>{nameOf(row.memberId)}</td>
+            <td className={CELL}>
+              <span className="font-medium">{row.label}</span>
+              {/* Shown only when it adds something the description does not. */}
+              {assetType && assetType.toLowerCase() !== row.label.toLowerCase() && (
+                <span className="mt-0.5 block text-[11.5px] text-ink-soft">{assetType}</span>
+              )}
+            </td>
+            <td className={`whitespace-nowrap ${CELL}`}>{row.institution ?? '—'}</td>
+            <td className={`whitespace-nowrap ${CELL} text-right font-mono`}>{formatINR(row.principalAmount)}</td>
+            <td className={`whitespace-nowrap ${CELL} font-mono`}>
               {row.nextDueDate ? formatDMY(row.nextDueDate) : '—'}
             </td>
-            <td className="whitespace-nowrap px-3 py-2">
+            <td className={`whitespace-nowrap ${CELL}`}>
               <ManagedByPill value={row.managedBy} />
             </td>
           </>
@@ -76,171 +91,102 @@ export function FixedIncomeSection({
       }}
       renderEdit={(draft, set, errors) => (
         <>
-          <td className="px-3 py-2">
-            <MemberSelect
-              id="fi-member"
-              label="Member"
-              members={members}
-              value={draft.memberId}
-              onChange={(memberId) => set({ memberId })}
-              error={errors.memberId}
-            />
-          </td>
-          <td className="px-3 py-2">
-            <label htmlFor="fi-label" className="sr-only">
-              Description
-            </label>
-            <input
-              id="fi-label"
-              value={draft.label}
-              onChange={(event) => set({ label: event.target.value })}
-              className={CELL}
-              {...fieldErrorProps('fi-label', errors.label)}
-            />
-            <FieldError id="fi-label" message={errors.label} />
-          </td>
-          <td className="px-3 py-2">
-            <label htmlFor="fi-asset" className="sr-only">
-              Asset type
-            </label>
-            <input
-              id="fi-asset"
-              value={detail(draft, 'asset_type')}
-              onChange={(event) => set(setDetail(draft, 'asset_type', event.target.value))}
-              placeholder="FD / NCD / Bond"
-              className={CELL}
-              {...fieldErrorProps('fi-asset', detailError(errors, 'asset_type'))}
-            />
-            <FieldError id="fi-asset" message={detailError(errors, 'asset_type')} />
-          </td>
-          <td className="px-3 py-2">
-            <label htmlFor="fi-institution" className="sr-only">
-              Institution
-            </label>
-            <input
-              id="fi-institution"
-              value={draft.institution}
-              onChange={(event) => set({ institution: event.target.value })}
-              className={CELL}
-            />
-          </td>
-          <td className="px-3 py-2">
-            <MoneyInput
-              id="fi-amount"
-              label="Invested amount"
-              value={draft.principalAmount}
-              onChange={(principalAmount) => set({ principalAmount })}
-              error={errors.principalAmount}
-            />
-          </td>
-          <td className="px-3 py-2">
-            {/* Maturity lives in next_due_date, never in details.maturity_date:
-                two stores for one fact would drift, and only the column feeds
-                the reminder engine. */}
-            <DateField
-              id="fi-maturity"
-              label="Maturity date"
-              value={draft.nextDueDate}
-              onChange={(nextDueDate) => set({ nextDueDate })}
-              error={errors.nextDueDate}
-            />
-          </td>
-          <td className="px-3 py-2">
-            <label htmlFor="fi-managed" className="sr-only">
-              Managed by
-            </label>
-            <select
-              id="fi-managed"
-              value={draft.managedBy}
-              onChange={(event) => set({ managedBy: event.target.value as ManagedBy })}
-              className={CELL}
-            >
-              <option value="self">With us</option>
-              <option value="external">External</option>
-            </select>
-          </td>
+          <MemberSelect
+            id="fi-member"
+            label="Member"
+            members={members}
+            value={draft.memberId}
+            onChange={(memberId) => set({ memberId })}
+            error={errors.memberId}
+          />
+          <TextField
+            id="fi-label"
+            label="Description"
+            value={draft.label}
+            onChange={(label) => set({ label })}
+            error={errors.label}
+            className="md:col-span-2"
+          />
+          <ManagedBySelect id="fi-managed" value={draft.managedBy} onChange={(managedBy) => set({ managedBy })} />
+          <TextField
+            id="fi-asset"
+            label="Asset type"
+            value={detail(draft, 'asset_type')}
+            onChange={(value) => set(setDetail(draft, 'asset_type', value))}
+            error={detailError(errors, 'asset_type')}
+            placeholder="FD / NCD / Bond"
+          />
+          <TextField
+            id="fi-institution"
+            label="Institution"
+            value={draft.institution}
+            onChange={(institution) => set({ institution })}
+          />
+          <MoneyInput
+            id="fi-amount"
+            label="Invested amount"
+            value={draft.principalAmount}
+            onChange={(principalAmount) => set({ principalAmount })}
+            error={errors.principalAmount}
+          />
+          {/* Maturity lives in next_due_date, never in details.maturity_date:
+              two stores for one fact would drift, and only the column feeds
+              the reminder engine. */}
+          <DateField
+            id="fi-maturity"
+            label="Maturity date"
+            value={draft.nextDueDate}
+            onChange={(nextDueDate) => set({ nextDueDate })}
+            error={errors.nextDueDate}
+          />
         </>
       )}
       renderDetails={(draft, set, errors) => (
         <>
-          <div>
-            <label htmlFor="fi-rate" className={DETAIL_LABEL}>
-              Interest rate (%)
-            </label>
-            <input
-              id="fi-rate"
-              type="number"
-              min={0}
-              step="0.01"
-              value={detail(draft, 'interest_rate')}
-              onChange={(event) =>
-                set(
-                  setDetail(
-                    draft,
-                    'interest_rate',
-                    event.target.value === '' ? undefined : Number(event.target.value),
-                  ),
-                )
-              }
-              className={`${CELL} font-mono`}
-              {...fieldErrorProps('fi-rate', detailError(errors, 'interest_rate'))}
-            />
-            <FieldError id="fi-rate" message={detailError(errors, 'interest_rate')} />
-          </div>
-          <div>
-            <label htmlFor="fi-payout" className={DETAIL_LABEL}>
-              Payout frequency
-            </label>
-            <input
-              id="fi-payout"
-              value={detail(draft, 'payout_frequency')}
-              onChange={(event) => set(setDetail(draft, 'payout_frequency', event.target.value))}
-              className={CELL}
-              {...fieldErrorProps('fi-payout', detailError(errors, 'payout_frequency'))}
-            />
-            <FieldError id="fi-payout" message={detailError(errors, 'payout_frequency')} />
-          </div>
-          <div>
-            <label htmlFor="fi-frequency" className={DETAIL_LABEL}>
-              Frequency
-            </label>
+          <NumberField
+            id="fi-rate"
+            label="Interest rate (%)"
+            min={0}
+            step="0.01"
+            value={detail(draft, 'interest_rate')}
+            onChange={(value) => set(setDetail(draft, 'interest_rate', value))}
+            error={detailError(errors, 'interest_rate')}
+          />
+          <TextField
+            id="fi-payout"
+            label="Payout frequency"
+            value={detail(draft, 'payout_frequency')}
+            onChange={(value) => set(setDetail(draft, 'payout_frequency', value))}
+            error={detailError(errors, 'payout_frequency')}
+            placeholder="Cumulative, quarterly…"
+          />
+          <Field id="fi-frequency" label="Frequency">
             <select
               id="fi-frequency"
               value={draft.dueFrequency}
               onChange={(event) => set({ dueFrequency: event.target.value as DueFrequency })}
-              className={CELL}
+              className={inputClass()}
             >
-              <option value="one_time">one_time</option>
-              <option value="annual">annual</option>
-              <option value="half_yearly">half_yearly</option>
-              <option value="quarterly">quarterly</option>
-              <option value="monthly">monthly</option>
+              {FREQUENCIES.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
             </select>
-          </div>
-          <div>
-            <label htmlFor="fi-reminders" className={`${DETAIL_LABEL} flex items-center gap-1.5`}>
-              <input
-                id="fi-reminders"
-                type="checkbox"
-                checked={draft.remindersEnabled}
-                onChange={(event) => set({ remindersEnabled: event.target.checked })}
-              />
-              Send reminders
-            </label>
-          </div>
-          <div className="col-span-2">
-            <label htmlFor="fi-remarks" className={DETAIL_LABEL}>
-              Remarks
-            </label>
-            <input
-              id="fi-remarks"
-              value={detail(draft, 'remarks')}
-              onChange={(event) => set(setDetail(draft, 'remarks', event.target.value))}
-              className={CELL}
-              {...fieldErrorProps('fi-remarks', detailError(errors, 'remarks'))}
-            />
-            <FieldError id="fi-remarks" message={detailError(errors, 'remarks')} />
-          </div>
+          </Field>
+          <RemindersToggle
+            id="fi-reminders"
+            checked={draft.remindersEnabled}
+            onChange={(remindersEnabled) => set({ remindersEnabled })}
+          />
+          <TextField
+            id="fi-remarks"
+            label="Remarks"
+            value={detail(draft, 'remarks')}
+            onChange={(value) => set(setDetail(draft, 'remarks', value))}
+            error={detailError(errors, 'remarks')}
+            className="sm:col-span-2"
+          />
         </>
       )}
       toDraft={toHoldingDraft}

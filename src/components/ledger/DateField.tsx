@@ -2,7 +2,9 @@
 
 import { useState } from 'react'
 import { formatDMY, parseDMY, toISODate } from '@/lib/domain/dates'
-import { FieldError, fieldErrorProps } from './FieldError'
+import { inputClass } from '@/components/ui/styles'
+import { Field } from './Field'
+import { fieldErrorProps } from './FieldError'
 
 /**
  * Indian convention is DD-MM-YYYY; storage is always ISO. A native date input
@@ -15,12 +17,14 @@ export function DateField({
   value,
   onChange,
   error,
+  className,
 }: {
   id: string
   label: string
   value: string | null
   onChange: (value: string | null) => void
   error?: string
+  className?: string
 }) {
   const [text, setText] = useState(() => (value ? formatDMY(value) : ''))
   const [invalid, setInvalid] = useState(false)
@@ -54,29 +58,24 @@ export function DateField({
   }
 
   return (
-    <>
-      <label htmlFor={id} className="sr-only">
-        {label}
-      </label>
+    <Field id={id} label={label} error={error} className={className}>
       <input
         id={id}
         value={text}
         placeholder="DD-MM-YYYY"
         onChange={(event) => setText(event.target.value)}
         onBlur={commit}
-        className="w-full rounded border border-line-strong bg-white px-1.5 py-1 font-mono text-[12.5px]"
+        className={`${inputClass()} font-mono`}
         {...fieldErrorProps(id, error)}
         aria-invalid={error ? true : invalid}
       />
-      {error ? (
-        <FieldError id={id} message={error} />
-      ) : (
-        invalid && (
-          <span role="alert" className="text-[11px] text-rust">
-            Use DD-MM-YYYY.
-          </span>
-        )
+      {/* A server error takes the Field's own error slot; this covers only
+          what was typed but never parsed, which the server never sees. */}
+      {!error && invalid && (
+        <span role="alert" className="text-[11px] text-rust">
+          Use DD-MM-YYYY.
+        </span>
       )}
-    </>
+    </Field>
   )
 }

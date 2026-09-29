@@ -24,11 +24,11 @@ function setup(overrides: Record<string, unknown> = {}) {
       rowLabel={(row) => row.label}
       renderRead={(row) => <td>{row.label}</td>}
       renderEdit={(draft, set, errors) => (
-        <td>
+        <div>
           <label htmlFor="label">Plan name</label>
           <input id="label" value={draft.label} onChange={(e) => set({ label: e.target.value })} />
           {errors.label && <span role="alert">{errors.label}</span>}
-        </td>
+        </div>
       )}
       toDraft={(row) => ({ label: row.label })}
       emptyDraft={() => ({ label: '' })}
@@ -223,7 +223,7 @@ describe('EditableSection', () => {
   it('does not commit on Enter from a select field inside the editor', () => {
     const { onSave } = setup({
       renderEdit: (draft: Draft, set: (patch: Partial<Draft>) => void) => (
-        <td>
+        <div>
           <label htmlFor="label">Plan name</label>
           <input id="label" value={draft.label} onChange={(e) => set({ label: e.target.value })} />
           <label htmlFor="kind">Kind</label>
@@ -231,7 +231,7 @@ describe('EditableSection', () => {
             <option value="">Choose</option>
             <option value="term">Term</option>
           </select>
-        </td>
+        </div>
       ),
     })
     fireEvent.click(screen.getByRole('button', { name: 'Edit HDFC Click2Protect' }))
@@ -242,12 +242,12 @@ describe('EditableSection', () => {
   it('does not commit on Enter from a textarea inside the editor', () => {
     const { onSave } = setup({
       renderEdit: (draft: Draft, set: (patch: Partial<Draft>) => void) => (
-        <td>
+        <div>
           <label htmlFor="label">Plan name</label>
           <input id="label" value={draft.label} onChange={(e) => set({ label: e.target.value })} />
           <label htmlFor="notes">Notes</label>
           <textarea id="notes" value="" onChange={() => {}} />
-        </td>
+        </div>
       ),
     })
     fireEvent.click(screen.getByRole('button', { name: 'Edit HDFC Click2Protect' }))
@@ -272,5 +272,27 @@ describe('EditableSection', () => {
     await waitFor(() => expect(screen.getByText('Could not delete.')).toBeInTheDocument())
     expect(screen.getByRole('dialog')).toBeInTheDocument()
     expect(screen.getByRole('textbox')).toHaveValue('DELETE')
+  })
+  // Document order stands in for on-screen order: the table has no layout in
+  // jsdom, but a row rendered earlier in the tbody is drawn above a later one.
+  function isBefore(a: Element, b: Element) {
+    return Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING)
+  }
+
+  it("opens the editor in the row's own place, not at the foot of the table", () => {
+    setup({ rows: twoRows })
+    fireEvent.click(screen.getByRole('button', { name: 'Edit HDFC Click2Protect' }))
+    expect(isBefore(screen.getByLabelText('Plan name'), screen.getByText('Max Life Smart'))).toBe(true)
+  })
+
+  it('opens the delete confirmation directly under the row it would delete', () => {
+    setup({
+      rows: twoRows,
+      deleteConfirm: () => ({ title: 'Delete it?', body: 'This cannot be undone.' }),
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Delete HDFC Click2Protect' }))
+    const dialog = screen.getByRole('dialog')
+    expect(isBefore(screen.getByText('HDFC Click2Protect'), dialog)).toBe(true)
+    expect(isBefore(dialog, screen.getByText('Max Life Smart'))).toBe(true)
   })
 })

@@ -1,6 +1,8 @@
 'use client'
 
-import { FieldError, fieldErrorProps } from './FieldError'
+import { inputClass } from '@/components/ui/styles'
+import { Field } from './Field'
+import { fieldErrorProps } from './FieldError'
 
 /**
  * Plain numeric entry. Formatting to lakh/crore happens in read mode via
@@ -12,29 +14,35 @@ export function MoneyInput({
   value,
   onChange,
   error,
+  className,
 }: {
   id: string
   label: string
   value: number | null
   onChange: (value: number | null) => void
   error?: string
+  className?: string
 }) {
   return (
-    <>
-      <label htmlFor={id} className="sr-only">
-        {label}
-      </label>
-      <input
-        id={id}
-        type="number"
-        inputMode="numeric"
-        min={0}
-        value={value ?? ''}
-        onChange={(event) => onChange(event.target.value === '' ? null : Number(event.target.value))}
-        className="w-full rounded border border-line-strong bg-white px-1.5 py-1 text-right font-mono text-[12.5px]"
-        {...fieldErrorProps(id, error)}
-      />
-      <FieldError id={id} message={error} />
-    </>
+    <Field id={id} label={label} error={error} className={className}>
+      <div className="relative">
+        <span
+          aria-hidden
+          className="pointer-events-none absolute inset-y-0 left-2.5 flex items-center text-[13px] text-ink-soft"
+        >
+          ₹
+        </span>
+        <input
+          id={id}
+          type="number"
+          inputMode="numeric"
+          min={0}
+          value={value ?? ''}
+          onChange={(event) => onChange(event.target.value === '' ? null : Number(event.target.value))}
+          className={`${inputClass()} pl-6 font-mono`}
+          {...fieldErrorProps(id, error)}
+        />
+      </div>
+    </Field>
   )
 }

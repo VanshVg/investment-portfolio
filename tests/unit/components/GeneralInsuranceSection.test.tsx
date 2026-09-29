@@ -36,7 +36,7 @@ describe('GeneralInsuranceSection', () => {
         deleteHolding={ok}
       />,
     )
-    expect(screen.getByText('health')).toBeInTheDocument()
+    expect(screen.getByText('Health')).toBeInTheDocument()
     expect(screen.getByText('External')).toBeInTheDocument()
   })
 

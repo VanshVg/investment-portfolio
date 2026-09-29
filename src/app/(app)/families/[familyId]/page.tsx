@@ -1,6 +1,6 @@
-import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { createServerSupabase } from '@/lib/supabase/server'
+import { PageHeader } from '@/components/ui/PageHeader'
 import { getFamily, listHoldings, listMembers } from '@/lib/queries/families'
 import { updateFamily } from '../actions'
 import { FamilyHeader } from './_components/FamilyHeader'
@@ -45,12 +45,12 @@ export default async function FamilyWorkspacePage({
   }
 
   return (
-    <div className="pt-7">
-      <Link href="/families" className="text-[12.5px] text-ink-soft underline">
-        ← All families
-      </Link>
-
-      <h1 className="mt-2 mb-4 font-serif text-[22px] font-semibold text-navy">{family.name}</h1>
+    <div>
+      <PageHeader
+        title={family.name}
+        back={{ href: '/families', label: 'All families' }}
+        description={`${members.length} ${members.length === 1 ? 'member' : 'members'} · ${holdings.length} financial ${holdings.length === 1 ? 'record' : 'records'}`}
+      />
 
       <FamilyHeader family={family} updateFamily={updateFamily} />
 
@@ -64,7 +64,7 @@ export default async function FamilyWorkspacePage({
         }}
       />
 
-      <div id="members" className="scroll-mt-14">
+      <div id="members" className="scroll-mt-16">
         <MembersSection
           familyId={familyId}
           members={members}
@@ -75,7 +75,7 @@ export default async function FamilyWorkspacePage({
         />
       </div>
 
-      <div id="life" className="scroll-mt-14">
+      <div id="life" className="scroll-mt-16">
         <LifeInsuranceSection
           familyId={familyId}
           members={members}
@@ -86,7 +86,7 @@ export default async function FamilyWorkspacePage({
         />
       </div>
 
-      <div id="general" className="scroll-mt-14">
+      <div id="general" className="scroll-mt-16">
         <GeneralInsuranceSection
           familyId={familyId}
           members={members}
@@ -97,7 +97,7 @@ export default async function FamilyWorkspacePage({
         />
       </div>
 
-      <div id="mutual" className="scroll-mt-14">
+      <div id="mutual" className="scroll-mt-16">
         <MutualFundSection
           familyId={familyId}
           members={members}
@@ -108,7 +108,7 @@ export default async function FamilyWorkspacePage({
         />
       </div>
 
-      <div id="fixed" className="scroll-mt-14">
+      <div id="fixed" className="scroll-mt-16">
         <FixedIncomeSection
           familyId={familyId}
           members={members}
@@ -119,12 +119,6 @@ export default async function FamilyWorkspacePage({
         />
       </div>
 
-      <p className="mt-6 text-[12.5px] text-ink-soft">
-        {holdings.length} financial record(s)
-        {' · '}
-        {byCategory.life_insurance.length} life, {byCategory.general_insurance.length} general,{' '}
-        {byCategory.mutual_fund.length} mutual fund, {byCategory.fixed_income.length} fixed income
-      </p>
     </div>
   )
 }
