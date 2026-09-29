@@ -3,111 +3,67 @@
 Found during the Milestone 2 pre-merge review, verified against the code as merged,
 and left alone on purpose. Each entry says why it was left, and what makes it urgent again.
 
-The first three are **decisions, not tickets** — they need Hiral's answer or an
-architecture call before anyone writes code.
+D1–D4 were **decisions, not tickets**. All four were taken on 2026-09-29; each
+entry below records the answer and what was built for it.
 
 ---
 
-## D1. RLS is "any admin", not "the advisor who owns this family"
+## D1. RLS is "any admin", not "the advisor who owns this family" — decided
 
-**Status:** pre-existing, not introduced by this branch, but this is the first code to
-depend on it.
+**Decision:** keep it. There will only ever be one admin, so "any admin sees every
+family" is exactly right, and scoping policies to `owner_advisor_id` would add
+nothing. Revisit only if a second advisor login is ever introduced.
 
-Every RLS policy on `families`, `family_members`, `holdings`, `due_instances`,
-`reminder_rules` and `reminder_log` authorises via `is_admin()`. The
-`families.owner_advisor_id` column exists, is `NOT NULL`, is indexed, and is set on
-every insert — and **no policy consults it**. Verified live: an admin owning zero
-families sees all households, members and holdings.
-
-Also: `handle_new_user` defaults an unspecified role to `admin`, so any future signup
-path that forgets to set role metadata mints a full-access account.
-
-**Why it is contained today:** `enable_signup = false`, and there is exactly one
-advisor. Nothing is exposed to anyone.
-
-**What ends the containment:** a second advisor, or the already-defined `client` role
-getting a login. The project brief explicitly requires the design to accommodate
-client logins later without a rewrite, and this is the piece that would need to change first.
-
-**Decision needed:** scope the policies to `owner_advisor_id` now while there is one
-advisor and the migration is trivial, or accept it and make it the first task of
-whatever milestone introduces a second login. Doing it now is cheap; doing it after
-client logins ship means changing authorisation on a live dataset.
+**Hardening done** (`20260929090000_no_role_means_no_access.sql`): an account
+created without a role used to default to `admin`, so a future sign-up path that
+forgot to set the role would have minted full access. It now defaults to
+`client`, which has no access. The seed script sets `admin` explicitly.
 
 ---
 
-## D2. Deleting a family member is not erasure
+## D2. Deleting a family member is not erasure — decided: soft delete, everywhere
 
-Family-level deletion is genuine and complete — every foreign key in the chain is
-`ON DELETE CASCADE`, verified.
+**Decision:** nothing is destroyed. Families, members and holdings are
+soft-deleted (`deleted_at`, `20260929092000_soft_delete.sql`) and can be
+restored from **Deleted items** (`/deleted`).
 
-Member-level deletion is not. `holdings.member_id` is `ON DELETE SET NULL`, so when a
-member is removed the holding survives, still carrying `label`, `institution` and its
-`details` JSONB — which by design holds `policy_number`, `folio_number` and
-`insured_asset`. A policy number identifies a natural person.
+- Every read filters deleted rows out: the families list and its counts, the
+  workspace, the renewals and overdue listings, the daily cron's holding list,
+  and the reminder sweep. `tests/integration/soft-delete.test.ts` deletes one of
+  each and checks every one of those places, the sweep included.
+- A deleted household's members and holdings are not stamped themselves; the
+  family's stamp hides them, so a restore brings back exactly what was there.
+- A removed member keeps their holdings (shown as "Name (removed)"), and the
+  sweep treats them as absent: reminders for those holdings go to the advisor
+  only. A removed member cannot be newly assigned to a holding.
 
-The UI is honest about this ("will be kept, but will no longer be attributed to
-anyone"), so it is a defensible business choice rather than a bug. But it is not
-erasure, and this is exactly the path an individual DPDP erasure request would take.
-
-**Decision needed:** is a per-member erasure request expected to remove that member's
-holdings too, or only to de-attribute them? If the former, this needs either a cascade
-or an explicit "erase member and their records" action that is separate from the
-everyday "remove member" one. That distinction is a product question about what Hiral
-means when he removes someone from a household.
-
-**Made worse this milestone:** `reminder_log.recipient_mobile` is written by the
-sweep at the moment a reminder is queued and is never touched again. Removing
-the family member it belonged to does not remove it — the number sits in a
-log table indefinitely, outside the holding it was attributed through, which
-this same erasure request would have no reason to look at. Whatever D2
-decides for holdings needs to cover `reminder_log` too, or the erasure it
-describes is incomplete by construction.
+**What this leaves open — see T14:** a genuine DPDP erasure request can no
+longer be served from the app at all, because the app no longer destroys data.
 
 ---
 
-## D3. WhatsApp consent semantics when a mobile number changes
+## D3. WhatsApp consent semantics when a mobile number changes — decided
 
-**Two reviewers reached opposite conclusions here, which is why it is a decision rather
-than a fix.**
+**Decision:** consent is kept when the number changes (the existing behaviour).
 
-Today, editing a member's mobile number leaves `whatsapp_consent` and
-`whatsapp_consent_at` untouched.
+**The two uncontested sub-points are done** (`20260929091000_consent_history.sql`):
 
-- One position: correct. It is the same person with a corrected number, and clearing
-  consent on a typo fix would be user-hostile.
-- The other: wrong. WhatsApp opt-in attaches to the **number**, not the person, so a row
-  that keeps a timestamped consent record across a number change is asserting consent
-  for a number nobody ever opted in on.
-
-The second argument is stronger on DPDP grounds, but this is Hiral's call — he knows
-whether a number edit in practice means "fixed a typo" or "they got a new SIM".
-
-Two related sub-points are **not** contested and should be fixed whichever way D3 goes:
-
-- Withdrawing consent sets `whatsapp_consent_at` to NULL, destroying the evidence that
-  consent was ever obtained — including for messages already sent. DPDP s.6 requires the
-  fiduciary be able to demonstrate consent. Withdrawal should record a withdrawal, not
-  erase the history.
-- Neither trigger branch fires on a `true -> true` update, so a `whatsapp_consent_at`
-  supplied directly through PostgREST is preserved rather than trigger-owned.
+- Withdrawal no longer erases the evidence. `consent_events` is an append-only
+  history — consent given, withdrawn, and number changes while consented, each
+  with the number, time and who recorded it — written only by a trigger,
+  readable by the admin, never updatable or deletable. `whatsapp_consent_at`
+  still holds the current consent's time.
+- `whatsapp_consent_at` is now owned by the database on a `true -> true` update
+  too, so a value supplied through PostgREST is ignored.
 
 ---
 
-## D4. What should `amount_due` show for a fixed-income maturity?
+## D4. What should `amount_due` show for a fixed-income maturity? — decided
 
-A fixed deposit or bond has no `periodic_amount` — there is no premium to pay on
-a schedule — so this milestone's fix to `ensureDueInstances` (never refresh
-`amount_due` to null) leaves a fixed-income instance's `amount_due` exactly as
-it was set at creation or by hand, permanently. Nothing populates it from the
-maturity value automatically.
-
-**Decision needed:** should the maturity instance of a fixed-income holding show
-its maturity value in `amount_due`, sourced from `principal_amount` plus
-whatever return the product implies, or is `amount_due` meant only for a
-recurring premium and legitimately blank for this category? This is a product
-question about what the advisor expects to see on the renewals row for an FD
-or bond coming due, not an engineering one.
+**Decision:** an optional **Maturity amount** on fixed income; the renewals
+"Amount due" shows it, falling back to the amount invested. The rule lives in
+`src/lib/reminders/amount-due.ts` (`amountDueFor`), used by generation and by
+the refresh of untouched future instances.
 
 ---
 
@@ -285,3 +241,14 @@ the grouping legible, so this was a cosmetic deferral, not a functional gap.
 
 **Trigger:** revisit once the page has enough real rows on screen at once that eyeballing
 date groups from a plain column stops being fast enough — not before.
+
+## T14. There is no way to erase a person's data (consequence of D2)
+
+Every delete in the app is now a soft delete, by decision. DPDP still gives a
+data principal the right to erasure, and the only way to honour such a request
+today is a manual hard delete in the database. `consent_events` and
+`reminder_log.recipient_mobile` would need to be covered by it too.
+
+**Trigger:** the first erasure request, or any move towards more than one user
+of the system. The likely shape is a deliberate "Erase permanently" action on
+the Deleted items page, typed-confirmation gated, separate from everyday delete.
