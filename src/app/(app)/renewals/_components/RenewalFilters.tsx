@@ -1,10 +1,24 @@
 'use client'
 
+import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { addDays, endOfMonth, startOfMonth } from 'date-fns'
-import { formatDMY, fromISODate, parseDMY, toISODate, todayInIndia } from '@/lib/domain/dates'
+import {
+  describeDMYProblem,
+  formatDMY,
+  fromISODate,
+  parseDMY,
+  toISODate,
+  todayInIndia,
+} from '@/lib/domain/dates'
 import type { RenewalFilters as RenewalFilterValues } from '@/lib/queries/renewals'
-import { buttonClass, CARD, FIELD_LABEL, inputClass } from '@/components/ui/styles'
+import {
+  buttonClass,
+  CARD,
+  FIELD_LABEL,
+  inputClass,
+} from '@/components/ui/styles'
+import { DateInput } from '@/components/ui/DateInput'
 import { defaultRange } from './renewal-params'
 
 export interface FilterOption {
@@ -13,7 +27,10 @@ export interface FilterOption {
 }
 
 type Patch = Partial<
-  Pick<RenewalFilterValues, 'from' | 'to' | 'managedBy' | 'familyId' | 'memberId'>
+  Pick<
+    RenewalFilterValues,
+    'from' | 'to' | 'managedBy' | 'familyId' | 'memberId'
+  >
 >
 
 // One height and one label style for every control in the bar, so the
@@ -73,7 +90,10 @@ export function RenewalFilters({
 
   function thisMonthRange() {
     const today = fromISODate(todayInIndia())!
-    return { from: toISODate(startOfMonth(today)), to: toISODate(endOfMonth(today)) }
+    return {
+      from: toISODate(startOfMonth(today)),
+      to: toISODate(endOfMonth(today)),
+    }
   }
 
   function applyThisMonth() {
@@ -91,13 +111,8 @@ export function RenewalFilters({
     return { from: toISODate(today), to: toISODate(addDays(today, days)) }
   }
 
-  function applyCustomRange(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    const data = new FormData(event.currentTarget)
-    const from = parseDMY(String(data.get('from') ?? ''))
-    const to = parseDMY(String(data.get('to') ?? ''))
-    if (!from || !to) return
-    go({ from: toISODate(from), to: toISODate(to) })
+  function applyCustomRange(from: string, to: string) {
+    go({ from, to })
   }
 
   const rangeKey = `${filters.from}_${filters.to}`
@@ -108,7 +123,10 @@ export function RenewalFilters({
   // defaultRange — so clearing is navigating there, not rebuilding defaults
   // here that could drift from the server's.
   const onDefaults =
-    isCurrent(defaultRange()) && !filters.managedBy && !filters.familyId && !filters.memberId
+    isCurrent(defaultRange()) &&
+    !filters.managedBy &&
+    !filters.familyId &&
+    !filters.memberId
 
   return (
     <div className={CARD}>
@@ -143,38 +161,15 @@ export function RenewalFilters({
           </div>
         </div>
 
-        {/* Keyed to the current range so the uncontrolled inputs remount (and
-            therefore re-adopt their defaultValue) whenever a preset or a page
-            navigation changes the filters out from under this component. */}
-        <form key={rangeKey} onSubmit={applyCustomRange} className="flex items-end gap-2">
-          <div>
-            <label htmlFor="renewals-from" className={LABEL}>
-              From
-            </label>
-            <input
-              id="renewals-from"
-              name="from"
-              defaultValue={formatDMY(filters.from)}
-              placeholder="DD-MM-YYYY"
-              className={`${input('w-[116px]')} font-mono`}
-            />
-          </div>
-          <div>
-            <label htmlFor="renewals-to" className={LABEL}>
-              To
-            </label>
-            <input
-              id="renewals-to"
-              name="to"
-              defaultValue={formatDMY(filters.to)}
-              placeholder="DD-MM-YYYY"
-              className={`${input('w-[116px]')} font-mono`}
-            />
-          </div>
-          <button type="submit" className={BUTTON_IDLE}>
-            Apply
-          </button>
-        </form>
+        {/* Keyed to the current range so its fields reset to the URL's
+            values whenever a preset or a page navigation changes the filters
+            out from under it. */}
+        <CustomRange
+          key={rangeKey}
+          from={filters.from}
+          to={filters.to}
+          onApply={applyCustomRange}
+        />
       </div>
 
       <div className="flex flex-wrap items-end gap-x-4 gap-y-3 border-t border-line p-3">
@@ -185,7 +180,12 @@ export function RenewalFilters({
           <select
             id="renewals-managed-by"
             value={filters.managedBy ?? ''}
-            onChange={(event) => go({ managedBy: (event.target.value || undefined) as 'self' | 'external' | undefined })}
+            onChange={(event) =>
+              go({
+                managedBy: (event.target.value || undefined) as
+                  'self' | 'external' | undefined,
+              })
+            }
             className={input('w-[140px]')}
           >
             <option value="">All</option>
@@ -201,7 +201,12 @@ export function RenewalFilters({
           <select
             id="renewals-family"
             value={filters.familyId ?? ''}
-            onChange={(event) => go({ familyId: event.target.value || undefined, memberId: undefined })}
+            onChange={(event) =>
+              go({
+                familyId: event.target.value || undefined,
+                memberId: undefined,
+              })
+            }
             className={input('w-[220px]')}
           >
             <option value="">All families</option>
@@ -221,7 +226,9 @@ export function RenewalFilters({
             <select
               id="renewals-member"
               value={filters.memberId ?? ''}
-              onChange={(event) => go({ memberId: event.target.value || undefined })}
+              onChange={(event) =>
+                go({ memberId: event.target.value || undefined })
+              }
               className={input('w-[200px]')}
             >
               <option value="">All members</option>
@@ -245,5 +252,104 @@ export function RenewalFilters({
         )}
       </div>
     </div>
+  )
+}
+
+/**
+ * The typed or picked From/To pair. Holds its own text so a day chosen from
+ * the calendar lands in the box; nothing is applied until Apply (or Enter),
+ * because a range needs both ends before it means anything.
+ */
+function CustomRange({
+  from,
+  to,
+  onApply,
+}: {
+  from: string
+  to: string
+  onApply: (from: string, to: string) => void
+}) {
+  const [fromText, setFromText] = useState(formatDMY(from))
+  const [toText, setToText] = useState(formatDMY(to))
+  const [problem, setProblem] = useState<string | null>(null)
+
+  // A range that cannot be applied used to do nothing at all on Apply, which
+  // reads as a broken button. It now says why, and still does not navigate.
+  function rangeProblem(): string | null {
+    if (!fromText.trim() || !toText.trim()) return 'Enter both dates.'
+    const fromIssue = describeDMYProblem(fromText)
+    if (fromIssue) return `From: ${fromIssue}`
+    const toIssue = describeDMYProblem(toText)
+    if (toIssue) return `To: ${toIssue}`
+    if (parseDMY(fromText)! > parseDMY(toText)!)
+      return 'From must be on or before To.'
+    return null
+  }
+
+  function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const found = rangeProblem()
+    setProblem(found)
+    if (found) return
+    onApply(toISODate(parseDMY(fromText)!), toISODate(parseDMY(toText)!))
+  }
+
+  function edit(setter: (text: string) => void) {
+    return (text: string) => {
+      setter(text)
+      setProblem(null)
+    }
+  }
+
+  return (
+    <>
+      <form onSubmit={submit} className="flex items-end gap-2">
+        <div>
+          <label htmlFor="renewals-from" className={LABEL}>
+            From
+          </label>
+          <DateInput
+            id="renewals-from"
+            name="from"
+            size="sm"
+            width="w-[136px]"
+            text={fromText}
+            onTextChange={edit(setFromText)}
+            onPick={() => setProblem(null)}
+            inputProps={{
+              'aria-invalid': problem?.startsWith('From') || undefined,
+            }}
+          />
+        </div>
+        <div>
+          <label htmlFor="renewals-to" className={LABEL}>
+            To
+          </label>
+          <DateInput
+            id="renewals-to"
+            name="to"
+            size="sm"
+            width="w-[136px]"
+            text={toText}
+            onTextChange={edit(setToText)}
+            onPick={() => setProblem(null)}
+            inputProps={{
+              'aria-invalid': problem?.startsWith('To') || undefined,
+            }}
+          />
+        </div>
+        <button type="submit" className={BUTTON_IDLE}>
+          Apply
+        </button>
+      </form>
+      {/* A sibling of the form, not a child: the filter row wraps, so a
+        full-basis item gets a line of its own under the fields instead of
+        overlapping the divider below them. */}
+      {problem && (
+        <p role="alert" className="-mt-1 basis-full text-[11.5px] text-rust">
+          {problem}
+        </p>
+      )}
+    </>
   )
 }

@@ -1,6 +1,8 @@
 import { z } from 'zod'
 import { optionalIndianMobile } from './contact'
 
+export const MAX_REMINDER_DAYS = 365
+
 /**
  * Mirrors `reminder_rules_days_before_present` and
  * `reminder_rules_days_before_non_negative`: at least one window, no negative
@@ -36,7 +38,18 @@ const daysBefore = z.string().transform((raw, ctx) => {
       })
       return z.NEVER
     }
-    days.push(Number(part))
+    const value = Number(part)
+    // days_before is an int[] and the sweep scans that far ahead, so a
+    // window has to stop somewhere; a reminder more than a year out is not
+    // one anyone acts on.
+    if (value > MAX_REMINDER_DAYS) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `A reminder can be at most ${MAX_REMINDER_DAYS} days before the due date.`,
+      })
+      return z.NEVER
+    }
+    days.push(value)
   }
 
   return Array.from(new Set(days)).sort((a, b) => b - a)

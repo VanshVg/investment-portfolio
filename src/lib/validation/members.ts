@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { optionalIndianMobile } from './contact'
+import { MAX_LENGTH, requiredText } from './fields'
 
 export const memberRelations = [
   'self',
@@ -18,8 +19,8 @@ export const memberRelations = [
  */
 export const memberInput = z
   .object({
-    name: z.string().trim().min(1, 'Name is required.'),
-    relation: z.enum(memberRelations),
+    name: requiredText('Name', MAX_LENGTH.name),
+    relation: z.enum(memberRelations, { error: 'Choose a relation.' }),
     mobile: optionalIndianMobile,
     whatsappConsent: z.boolean(),
   })

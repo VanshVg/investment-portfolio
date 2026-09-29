@@ -14,6 +14,7 @@ export function MoneyInput({
   value,
   onChange,
   error,
+  required,
   className,
 }: {
   id: string
@@ -21,10 +22,11 @@ export function MoneyInput({
   value: number | null
   onChange: (value: number | null) => void
   error?: string
+  required?: boolean
   className?: string
 }) {
   return (
-    <Field id={id} label={label} error={error} className={className}>
+    <Field id={id} label={label} error={error} required={required} className={className}>
       <div className="relative">
         <span
           aria-hidden
@@ -37,6 +39,7 @@ export function MoneyInput({
           type="number"
           inputMode="numeric"
           min={0}
+          aria-required={required || undefined}
           value={value ?? ''}
           onChange={(event) => onChange(event.target.value === '' ? null : Number(event.target.value))}
           className={`${inputClass()} pl-6 font-mono`}

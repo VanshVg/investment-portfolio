@@ -81,6 +81,7 @@ export function MutualFundSection({
             />
             <TextField
               id="mf-label"
+            required
               label="Fund name"
               value={draft.label}
               onChange={(label) => set({ label })}
@@ -106,6 +107,7 @@ export function MutualFundSection({
                 field; stored in details, where an empty goal is absent. */}
             <MoneyInput
               id="mf-goal"
+            required
               label="Target goal"
               value={goal === '' ? null : Number(goal)}
               onChange={(value) => set(setDetail(draft, 'target_goal', value ?? undefined))}

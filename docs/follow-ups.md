@@ -150,23 +150,23 @@ evidence; the log is the send record). Before this branch neither table
 accumulated anything at all. The volume is a schedule problem now, not a
 hypothetical one.
 
-## T3. Free-text fields have no length bounds
+## T3. Free-text fields have no length bounds — resolved
 
-No `.max()` on `label`, `institution`, `remarks`, `policy_number`, `insured_asset` and
-friends. Postgres `text` will accept megabytes. Not a security issue with a single
-trusted user, but it becomes one the moment the Excel importer feeds unvetted cell
-contents into the same schemas — bound them before that lands, not after.
+Every free-text field now has a `.max()` through the shared builders in
+`src/lib/validation/fields.ts` (`MAX_LENGTH`: names 120, record names 200,
+codes such as policy and folio numbers 50, short labels 80, notes and remarks
+1000), with the message "Keep this under N characters." The same pass bounded
+amounts to what `numeric(14, 2)` holds and to two decimal places, dates to a
+real calendar date between 1950 and 2100, policy terms, goal horizons,
+interest rates and reminder windows. The importer inherits all of it by
+parsing through the same schemas.
 
-## T4. Fold the repeated holding-section controls into `holding-fields.tsx`
+## T4. Fold the repeated holding-section controls into `holding-fields.tsx` — resolved
 
-The managed-by select is byte-identical in four sections; the reminders toggle nearly
-so. Reviewed and **deliberately deferred**: the extraction would collapse the blocks
-that have never drifted while leaving untouched the surface that actually keeps failing
-(per-field error slots, which are irreducibly per-category and cannot live in a shared
-component). Cost was estimated honestly at ~70 new lines removing ~100 across 8 files.
-
-**Trigger:** when a fifth thing needs adding to all four sections. The reminders toggle
-was already missed once, so the next omission is the signal to do this.
+Done in the UI pass: `ManagedBySelect` and `RemindersToggle` (and the shared
+read-mode cell padding) live in
+`src/app/(app)/families/[familyId]/_components/holding-fields.tsx`, and all four
+holding sections use them.
 
 ## T5. Re-open the `23505` mapping in Milestone 3
 

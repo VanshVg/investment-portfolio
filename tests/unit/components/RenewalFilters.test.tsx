@@ -106,6 +106,47 @@ describe('RenewalFilters', () => {
   })
 })
 
+describe('custom range calendar', () => {
+  it('fills From from the calendar, and Apply uses what was picked', () => {
+    render(<RenewalFilters filters={filters({ from: '2026-09-14', to: '2026-10-14' })} families={[]} members={[]} />)
+
+    // Two date fields, two calendar buttons: the first belongs to From.
+    fireEvent.click(screen.getAllByRole('button', { name: 'Open calendar' })[0])
+    fireEvent.click(screen.getByRole('button', { name: /September 20th, 2026/ }))
+    expect(screen.getByLabelText('From')).toHaveValue('20-09-2026')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Apply' }))
+    expect(lastPushedUrl().searchParams.get('from')).toBe('2026-09-20')
+    expect(lastPushedUrl().searchParams.get('to')).toBe('2026-10-14')
+  })
+})
+
+describe('custom range validation', () => {
+  it('explains a date that cannot be read, and does not navigate', () => {
+    render(<RenewalFilters filters={filters()} families={[]} members={[]} />)
+    fireEvent.change(screen.getByLabelText('From'), { target: { value: '31-02-2026' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Apply' }))
+    expect(screen.getByRole('alert')).toHaveTextContent('From: That date does not exist.')
+    expect(push).not.toHaveBeenCalled()
+  })
+
+  it('refuses a range that ends before it starts', () => {
+    render(<RenewalFilters filters={filters()} families={[]} members={[]} />)
+    fireEvent.change(screen.getByLabelText('From'), { target: { value: '30-11-2026' } })
+    fireEvent.change(screen.getByLabelText('To'), { target: { value: '01-11-2026' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Apply' }))
+    expect(screen.getByRole('alert')).toHaveTextContent('From must be on or before To.')
+    expect(push).not.toHaveBeenCalled()
+  })
+
+  it('asks for both ends of the range', () => {
+    render(<RenewalFilters filters={filters()} families={[]} members={[]} />)
+    fireEvent.change(screen.getByLabelText('To'), { target: { value: '' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Apply' }))
+    expect(screen.getByRole('alert')).toHaveTextContent('Enter both dates.')
+  })
+})
+
 describe('clear filters', () => {
   const clear = () => screen.queryByRole('button', { name: 'Clear filters' })
 

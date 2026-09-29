@@ -1,8 +1,8 @@
 'use client'
 
 import { useState } from 'react'
-import { formatDMY, parseDMY, toISODate } from '@/lib/domain/dates'
-import { inputClass } from '@/components/ui/styles'
+import { describeDMYProblem, formatDMY, parseDMY, toISODate } from '@/lib/domain/dates'
+import { DateInput } from '@/components/ui/DateInput'
 import { Field } from './Field'
 import { fieldErrorProps } from './FieldError'
 
@@ -27,7 +27,8 @@ export function DateField({
   className?: string
 }) {
   const [text, setText] = useState(() => (value ? formatDMY(value) : ''))
-  const [invalid, setInvalid] = useState(false)
+  // What is wrong with the typed text, in words, or null when nothing is.
+  const [problem, setProblem] = useState<string | null>(null)
   // Tracks the value this text was last synced from, so an external change
   // (e.g. picking a different row to edit) can be caught during render rather
   // than in an effect — React's own pattern for resetting derived
@@ -37,43 +38,49 @@ export function DateField({
   if (value !== syncedValue) {
     setSyncedValue(value)
     setText(value ? formatDMY(value) : '')
-    setInvalid(false)
+    setProblem(null)
   }
 
   function commit() {
     const trimmed = text.trim()
     if (trimmed === '') {
-      setInvalid(false)
+      setProblem(null)
       onChange(null)
       return
     }
+    const typedProblem = describeDMYProblem(trimmed)
     const parsed = parseDMY(trimmed)
-    if (!parsed) {
-      // Surface it rather than dropping what was typed.
-      setInvalid(true)
+    if (typedProblem || !parsed) {
+      // Surface it rather than dropping what was typed, and say which rule
+      // it broke: "Use DD-MM-YYYY" is the wrong thing to tell someone who
+      // typed 31-02-2027 in exactly that format.
+      setProblem(typedProblem ?? 'Use DD-MM-YYYY.')
       return
     }
-    setInvalid(false)
+    setProblem(null)
     onChange(toISODate(parsed))
   }
 
   return (
     <Field id={id} label={label} error={error} className={className}>
-      <input
+      <DateInput
         id={id}
-        value={text}
-        placeholder="DD-MM-YYYY"
-        onChange={(event) => setText(event.target.value)}
+        text={text}
+        onTextChange={setText}
         onBlur={commit}
-        className={`${inputClass()} font-mono`}
-        {...fieldErrorProps(id, error)}
-        aria-invalid={error ? true : invalid}
+        // A picked day is always valid, so it commits straight away rather
+        // than waiting for the blur a typed date needs.
+        onPick={(iso) => {
+          setProblem(null)
+          onChange(iso)
+        }}
+        inputProps={{ ...fieldErrorProps(id, error), 'aria-invalid': error ? true : problem !== null }}
       />
       {/* A server error takes the Field's own error slot; this covers only
           what was typed but never parsed, which the server never sees. */}
-      {!error && invalid && (
+      {!error && problem && (
         <span role="alert" className="text-[11px] text-rust">
-          Use DD-MM-YYYY.
+          {problem}
         </span>
       )}
     </Field>
