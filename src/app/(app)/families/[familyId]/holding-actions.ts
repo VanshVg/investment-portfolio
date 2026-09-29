@@ -5,6 +5,7 @@ import { createServerSupabase } from '@/lib/supabase/server'
 import { holdingInput } from '@/lib/validation/holdings'
 import { applyDueDateEdit } from '@/lib/domain/due-dates'
 import { fromPostgrestError, fromZodError, fromEmptyWrite, type ActionResult } from '@/lib/actions/result'
+import { householdIsLive } from './household'
 import { reconcileDueInstances } from '@/lib/reminders/reconcile'
 import { horizonFrom } from '@/lib/reminders/horizon'
 import { todayInIndia } from '@/lib/domain/dates'
@@ -35,24 +36,36 @@ const MEMBER_NOT_IN_FAMILY_ERROR: ActionResult = {
   fieldErrors: { memberId: 'That family member does not belong to this household.' },
 }
 
+const MEMBER_REMOVED_ERROR: ActionResult = {
+  ok: false,
+  fieldErrors: { memberId: 'That family member has been removed. Choose someone else.' },
+}
+
 /**
  * `member_id` only has a foreign key to `family_members`, which checks that
  * the row exists, not that it belongs to this household — so without this
  * check a member id borrowed from a different family would be accepted.
+ *
+ * A removed member (decision D2) cannot be newly given a holding. A holding
+ * already attributed to them keeps that attribution through an edit
+ * (`currentMemberId`), so saving some other field does not force the advisor
+ * to reassign it.
  */
 async function memberBelongsToFamily(
   supabase: SupabaseClient<Database>,
   memberId: string,
   familyId: string,
+  currentMemberId: string | null = null,
 ): Promise<ActionResult | null> {
   const { data, error } = await supabase
     .from('family_members')
-    .select('id')
+    .select('id, deleted_at')
     .eq('id', memberId)
     .eq('family_id', familyId)
     .maybeSingle()
   if (error) return fromPostgrestError(error)
   if (!data) return MEMBER_NOT_IN_FAMILY_ERROR
+  if (data.deleted_at !== null && memberId !== currentMemberId) return MEMBER_REMOVED_ERROR
   return null
 }
 
@@ -62,6 +75,9 @@ export async function createHolding(familyId: string, input: unknown): Promise<A
   const value = parsed.data
 
   const supabase = await createServerSupabase()
+
+  const deletedHousehold = await householdIsLive(supabase, familyId)
+  if (deletedHousehold) return deletedHousehold
 
   if (value.memberId !== null) {
     const membershipError = await memberBelongsToFamily(supabase, value.memberId, familyId)
@@ -114,12 +130,16 @@ export async function updateHolding(
   // written by this action, so the column can never actually change).
   const { data: current, error: readError } = await supabase
     .from('holdings')
-    .select('anchor_due_date, next_due_date, category')
+    .select('anchor_due_date, next_due_date, category, member_id')
     .eq('id', id)
-    .single()
+    .is('deleted_at', null)
+    .maybeSingle()
   if (readError) return fromPostgrestError(readError)
+  // Deleted in another tab since the form opened: say so rather than
+  // writing to a row the advisor can no longer see.
+  if (!current) return fromEmptyWrite()
 
-  if (current!.category !== value.category) {
+  if (current.category !== value.category) {
     return {
       ok: false,
       formError: 'The category on this record cannot be changed here. Refresh the page and try again.',
@@ -127,12 +147,17 @@ export async function updateHolding(
   }
 
   if (value.memberId !== null) {
-    const membershipError = await memberBelongsToFamily(supabase, value.memberId, familyId)
+    const membershipError = await memberBelongsToFamily(
+      supabase,
+      value.memberId,
+      familyId,
+      current.member_id,
+    )
     if (membershipError) return membershipError
   }
 
   const schedule = applyDueDateEdit(
-    { anchorDueDate: current!.anchor_due_date, nextDueDate: current!.next_due_date },
+    { anchorDueDate: current.anchor_due_date, nextDueDate: current.next_due_date },
     value.nextDueDate,
   )
 
@@ -156,6 +181,7 @@ export async function updateHolding(
       details: value.details,
     })
     .eq('id', id)
+    .is('deleted_at', null)
     .select('id')
 
   if (error) return fromPostgrestError(error)
@@ -169,14 +195,23 @@ export async function updateHolding(
 
 export async function deleteHolding(id: string, familyId: string): Promise<ActionResult> {
   const supabase = await createServerSupabase()
-  // Cascades to due_instances, reminder_rules and reminder_log for this record.
-  // Postgres applies RLS's USING clause to DELETE as a row filter, not an
-  // error, so `.select('id')` is required to tell "deleted" from "RLS
-  // silently kept the row" — an empty error-free result is the latter.
-  const { data: deleted, error } = await supabase.from('holdings').delete().eq('id', id).select('id')
+  // A soft delete (decision D2): hidden from every listing and from the
+  // reminder sweep, restorable from Deleted items. Its due instances and
+  // reminder log are kept, so a restore brings its schedule back with it.
+  // RLS applies its USING clause to UPDATE as a row filter, not an error, so
+  // `.select('id')` is required to tell "deleted" from "RLS silently kept
+  // the row" — an empty error-free result is the latter.
+  const { data: deleted, error } = await supabase
+    .from('holdings')
+    .update({ deleted_at: new Date().toISOString() })
+    .eq('id', id)
+    .is('deleted_at', null)
+    .select('id')
   if (error) return fromPostgrestError(error)
   if (!deleted || deleted.length === 0) return fromEmptyWrite()
 
   revalidatePath(`/families/${familyId}`)
+  revalidatePath('/renewals')
+  revalidatePath('/deleted')
   return { ok: true, id }
 }

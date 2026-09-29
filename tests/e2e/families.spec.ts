@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { purgeE2EHouseholds } from './cleanup'
 
 const EMAIL = process.env.SEED_ADMIN_EMAIL ?? 'hiral@example.test'
 const PASSWORD = process.env.SEED_ADMIN_PASSWORD ?? ''
@@ -13,6 +14,8 @@ async function signIn(page: import('@playwright/test').Page) {
   await page.getByRole('button', { name: 'Sign in' }).click()
   await expect(page).toHaveURL(/\/families$/)
 }
+
+test.afterAll(purgeE2EHouseholds)
 
 test('records a household, its member and a policy, then erases it', async ({ page }) => {
   await signIn(page)

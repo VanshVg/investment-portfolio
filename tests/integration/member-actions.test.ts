@@ -176,7 +176,7 @@ describe('createMember / updateMember / deleteMember server actions', () => {
     await admin.from('family_members').delete().eq('id', member!.id)
   })
 
-  it('deletes a member and revalidates the family page, orphaning rather than deleting their holdings', async () => {
+  it('soft-deletes a member and revalidates the family page, keeping their holdings attributed to them', async () => {
     const admin = adminClient()
     const { data: member } = await admin
       .from('family_members')
@@ -198,19 +198,22 @@ describe('createMember / updateMember / deleteMember server actions', () => {
     const result = await deleteMember(member!.id, familyId)
     expect(result.ok).toBe(true)
 
+    // Soft delete (decision D2): the member is stamped, not destroyed...
     const { data: row } = await admin
       .from('family_members')
-      .select('id')
+      .select('id, deleted_at')
       .eq('id', member!.id)
-      .maybeSingle()
-    expect(row).toBeNull()
+      .single()
+    expect(row!.deleted_at).not.toBeNull()
 
+    // ...and their holding stays attributed to them, instead of losing its
+    // owner as the old hard delete's ON DELETE SET NULL made it do.
     const { data: after } = await admin
       .from('holdings')
       .select('id, member_id')
       .eq('id', holding!.id)
       .single()
-    expect(after!.member_id).toBeNull()
+    expect(after!.member_id).toBe(member!.id)
 
     expect(revalidatePath).toHaveBeenCalledWith(`/families/${familyId}`)
 

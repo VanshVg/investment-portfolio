@@ -167,6 +167,10 @@ export async function listRenewals(
   let query = client
     .from('due_instances')
     .select(RENEWAL_ROW_SELECT, { count: 'exact' })
+    // Nothing soft-deleted is ever due (decision D2): not a deleted holding,
+    // nor anything in a deleted household.
+    .is('holdings.deleted_at', null)
+    .is('holdings.families.deleted_at', null)
     .gte('due_date', filters.from)
     .lte('due_date', filters.to)
     .order('due_date', { ascending: true })
@@ -231,6 +235,8 @@ export async function listOverdue(
   let query = client
     .from('due_instances')
     .select(RENEWAL_ROW_SELECT)
+    .is('holdings.deleted_at', null)
+    .is('holdings.families.deleted_at', null)
     .lt('due_date', filters.before)
     .neq('payment_status', 'paid')
     .eq('off_schedule', false)

@@ -301,7 +301,7 @@ describe('createHolding / updateHolding / deleteHolding server actions', () => {
     await admin.from('holdings').delete().eq('id', holding!.id)
   })
 
-  it('deletes a holding and cascades due instances, driven through the action rather than a raw client', async () => {
+  it('soft-deletes a holding through the action, keeping its due instances for a restore', async () => {
     const admin = adminClient()
     const { data: holding } = await admin
       .from('holdings')
@@ -314,18 +314,20 @@ describe('createHolding / updateHolding / deleteHolding server actions', () => {
     const result = await deleteHolding(holding!.id, familyId)
     expect(result.ok).toBe(true)
 
+    // Soft delete (decision D2): stamped, not destroyed, and its due
+    // instances kept, so a restore brings the schedule back with it.
     const { data: row } = await admin
       .from('holdings')
-      .select('id')
+      .select('id, deleted_at')
       .eq('id', holding!.id)
-      .maybeSingle()
-    expect(row).toBeNull()
+      .single()
+    expect(row!.deleted_at).not.toBeNull()
 
     const { data: instances } = await admin
       .from('due_instances')
       .select('id')
       .eq('holding_id', holding!.id)
-    expect(instances).toEqual([])
+    expect(instances).toHaveLength(1)
 
     expect(revalidatePath).toHaveBeenCalledWith(`/families/${familyId}`)
   })

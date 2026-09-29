@@ -24,10 +24,14 @@ export default async function FamilyWorkspacePage({
   const family = await getFamily(supabase, familyId)
   if (!family) notFound()
 
-  const [members, holdings] = await Promise.all([
-    listMembers(supabase, familyId),
+  const [everyone, holdings] = await Promise.all([
+    // Removed members too: holdings stay attributed to a removed member
+    // (decision D2) and still need their name. The members table and every
+    // member picker show only current members.
+    listMembers(supabase, familyId, { includeRemoved: true }),
     listHoldings(supabase, familyId),
   ])
+  const members = everyone.filter((member) => !member.removed)
 
   // Grouped here rather than in four queries: one round trip renders the page.
   const byCategory = {
@@ -78,7 +82,7 @@ export default async function FamilyWorkspacePage({
       <div id="life" className="scroll-mt-16">
         <LifeInsuranceSection
           familyId={familyId}
-          members={members}
+          members={everyone}
           holdings={byCategory.life_insurance}
           createHolding={createHolding}
           updateHolding={updateHolding}
@@ -89,7 +93,7 @@ export default async function FamilyWorkspacePage({
       <div id="general" className="scroll-mt-16">
         <GeneralInsuranceSection
           familyId={familyId}
-          members={members}
+          members={everyone}
           holdings={byCategory.general_insurance}
           createHolding={createHolding}
           updateHolding={updateHolding}
@@ -100,7 +104,7 @@ export default async function FamilyWorkspacePage({
       <div id="mutual" className="scroll-mt-16">
         <MutualFundSection
           familyId={familyId}
-          members={members}
+          members={everyone}
           holdings={byCategory.mutual_fund}
           createHolding={createHolding}
           updateHolding={updateHolding}
@@ -111,7 +115,7 @@ export default async function FamilyWorkspacePage({
       <div id="fixed" className="scroll-mt-16">
         <FixedIncomeSection
           familyId={familyId}
-          members={members}
+          members={everyone}
           holdings={byCategory.fixed_income}
           createHolding={createHolding}
           updateHolding={updateHolding}

@@ -4,12 +4,16 @@ import { revalidatePath } from 'next/cache'
 import { createServerSupabase } from '@/lib/supabase/server'
 import { memberInput } from '@/lib/validation/members'
 import { fromPostgrestError, fromZodError, fromEmptyWrite, type ActionResult } from '@/lib/actions/result'
+import { householdIsLive } from './household'
 
 export async function createMember(familyId: string, input: unknown): Promise<ActionResult> {
   const parsed = memberInput.safeParse(input)
   if (!parsed.success) return fromZodError(parsed.error)
 
   const supabase = await createServerSupabase()
+  const deletedHousehold = await householdIsLive(supabase, familyId)
+  if (deletedHousehold) return deletedHousehold
+
   const { data, error } = await supabase
     .from('family_members')
     .insert({
@@ -51,6 +55,7 @@ export async function updateMember(
       whatsapp_consent: parsed.data.whatsappConsent,
     })
     .eq('id', id)
+    .is('deleted_at', null)
     .select('id')
 
   if (error) return fromPostgrestError(error)
@@ -62,15 +67,21 @@ export async function updateMember(
 
 export async function deleteMember(id: string, familyId: string): Promise<ActionResult> {
   const supabase = await createServerSupabase()
-  // holdings.member_id is ON DELETE SET NULL: their records survive as
-  // household-level entries. The UI states that count before confirming.
-  // RLS applies its USING clause to DELETE as a row filter, not an error, so
-  // `.select('id')` is required to tell a real delete from RLS silently
-  // keeping the row.
-  const { data, error } = await supabase.from('family_members').delete().eq('id', id).select('id')
+  // A soft delete (decision D2): the member is hidden and can be restored.
+  // Their holdings stay attributed to them and stay on the ledger; reminders
+  // for those go to the advisor only, since a removed member is never
+  // messaged (see runReminderSweep). The UI states that before confirming.
+  // `.select('id')` tells a real delete from RLS silently keeping the row.
+  const { data, error } = await supabase
+    .from('family_members')
+    .update({ deleted_at: new Date().toISOString() })
+    .eq('id', id)
+    .is('deleted_at', null)
+    .select('id')
   if (error) return fromPostgrestError(error)
   if (!data || data.length === 0) return fromEmptyWrite()
 
   revalidatePath(`/families/${familyId}`)
+  revalidatePath('/deleted')
   return { ok: true, id }
 }

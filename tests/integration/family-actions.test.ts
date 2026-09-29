@@ -171,7 +171,7 @@ describe('createFamily / updateFamily / deleteFamily server actions', () => {
     await admin.from('families').delete().eq('id', family!.id)
   })
 
-  it('deletes the family and cascades to its dependents through the action', async () => {
+  it('soft-deletes the family through the action, leaving its members and holdings intact to restore', async () => {
     const admin = adminClient()
     const { data: family } = await admin
       .from('families')
@@ -187,18 +187,32 @@ describe('createFamily / updateFamily / deleteFamily server actions', () => {
     const result = await deleteFamily(family!.id)
     expect(result.ok).toBe(true)
 
-    const { data: row } = await admin.from('families').select('id').eq('id', family!.id).maybeSingle()
-    expect(row).toBeNull()
+    // Soft delete (decision D2): the household is stamped, not destroyed...
+    const { data: row } = await admin
+      .from('families')
+      .select('id, deleted_at')
+      .eq('id', family!.id)
+      .single()
+    expect(row!.deleted_at).not.toBeNull()
 
+    // ...and its members and holdings are left exactly as they were, hidden
+    // by the family's stamp rather than stamped themselves, so a restore
+    // brings back precisely what was there.
     const { data: members } = await admin
       .from('family_members')
-      .select('id')
+      .select('deleted_at')
       .eq('family_id', family!.id)
-    const { data: holdings } = await admin.from('holdings').select('id').eq('family_id', family!.id)
-    expect(members).toEqual([])
-    expect(holdings).toEqual([])
+    const { data: holdings } = await admin
+      .from('holdings')
+      .select('deleted_at')
+      .eq('family_id', family!.id)
+    expect(members).toEqual([{ deleted_at: null }])
+    expect(holdings).toEqual([{ deleted_at: null }])
 
     expect(revalidatePath).toHaveBeenCalledWith('/families')
+
+    // A soft delete no longer removes the fixture, so the test does.
+    await admin.from('families').delete().eq('id', family!.id)
   })
 
   it('returns a failure result without writing when no user is signed in', async () => {
@@ -296,8 +310,13 @@ describe('createFamily / updateFamily / deleteFamily server actions', () => {
 
     expect(result.ok).toBe(false)
 
-    const { data: row } = await admin.from('families').select('id').eq('id', family!.id).maybeSingle()
+    const { data: row } = await admin
+      .from('families')
+      .select('id, deleted_at')
+      .eq('id', family!.id)
+      .maybeSingle()
     expect(row).not.toBeNull()
+    expect(row!.deleted_at).toBeNull()
 
     await admin.from('families').delete().eq('id', family!.id)
   })

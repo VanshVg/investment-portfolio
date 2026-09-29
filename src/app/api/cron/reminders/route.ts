@@ -4,6 +4,7 @@ import { createAdminSupabase } from '@/lib/supabase/admin'
 import { reconcileDueInstances } from '@/lib/reminders/reconcile'
 import { horizonFrom } from '@/lib/reminders/horizon'
 import { runReminderSweep, type SweepResult } from '@/lib/reminders/sweep'
+import { listLiveHoldingIds } from '@/lib/reminders/live-holdings'
 import { todayInIndia } from '@/lib/domain/dates'
 
 // The sweep walks every holding; it must not be served from a cache.
@@ -35,14 +36,16 @@ export async function GET(request: Request): Promise<Response> {
   const today = todayInIndia()
   const through = horizonFrom(today)
 
-  const { data: holdings, error } = await supabase.from('holdings').select('id')
-  if (error) {
+  let holdingIds: string[]
+  try {
+    holdingIds = await listLiveHoldingIds(supabase)
+  } catch {
     return Response.json({ error: 'holdings unavailable' }, { status: 500 })
   }
 
   let generated = 0
   let removed = 0
-  for (const holding of holdings ?? []) {
+  for (const holdingId of holdingIds) {
     try {
       // Reconciliation, not bare generation. ensureDueInstances only adds and
       // refreshes; it never removes an instance whose date has left the
@@ -53,14 +56,14 @@ export async function GET(request: Request): Promise<Response> {
       // the holding's own schedule columns, then its existing instances.
       const { created, deleted } = await reconcileDueInstances(
         supabase,
-        holding.id,
+        holdingId,
         through,
       )
       generated += created
       removed += deleted
     } catch (cause) {
       console.error(
-        `due-instance generation failed for holding ${holding.id}`,
+        `due-instance generation failed for holding ${holdingId}`,
         cause,
       )
     }
