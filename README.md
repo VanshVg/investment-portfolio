@@ -7,7 +7,7 @@ them.
 
 ## Requirements
 
-- Node 22+
+- Node 24
 - Docker (for the local database)
 
 ## Getting started
@@ -44,3 +44,4 @@ Sign in at http://localhost:3000/login with the credentials in `.env.local`.
 - `src/lib/queries/` — composed database reads
 - `supabase/migrations/` — schema source of truth
 - `docs/data-model.md` — why the schema is shaped the way it is
+- `docs/deployment.md` — deploying to Vercel + Supabase, backups, operating

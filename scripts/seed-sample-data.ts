@@ -5,8 +5,18 @@ config({ path: '.env.local', quiet: true })
 
 const FAMILY_NAME = 'Patel — Rajeshkumar'
 
+// This script deletes and recreates a household, so it must only ever run
+// against the local database — never a hosted project holding client data.
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+const LOCAL_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]'])
+if (!supabaseUrl || !LOCAL_HOSTS.has(new URL(supabaseUrl).hostname)) {
+  throw new Error(
+    `Refusing to seed sample data: ${supabaseUrl || 'NEXT_PUBLIC_SUPABASE_URL (unset)'} is not a local Supabase.`,
+  )
+}
+
 const admin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  supabaseUrl,
   process.env.SUPABASE_SERVICE_ROLE_KEY!,
   { auth: { autoRefreshToken: false, persistSession: false } },
 )
