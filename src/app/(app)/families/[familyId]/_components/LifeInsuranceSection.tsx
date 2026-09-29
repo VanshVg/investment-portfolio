@@ -78,6 +78,7 @@ export function LifeInsuranceSection({
           />
           <TextField
             id="life-label"
+            required
             label="Plan name"
             value={draft.label}
             onChange={(label) => set({ label })}

@@ -69,6 +69,7 @@ export function FamilyList({
         <>
           <TextField
             id="family-name"
+            required
             label="Family name"
             value={draft.name}
             onChange={(name) => set({ name })}

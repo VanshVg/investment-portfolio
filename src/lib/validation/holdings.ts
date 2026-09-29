@@ -1,7 +1,17 @@
 import { z } from 'zod'
+import {
+  amountRules,
+  isoDateRules,
+  MAX_LENGTH,
+  optionalDetailText,
+  optionalText,
+  optionalYears,
+  requiredDetailAmount,
+  requiredText,
+} from './fields'
 
 /** Storage format is always ISO yyyy-mm-dd; DD-MM-YYYY exists only in the UI. */
-const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'expected yyyy-mm-dd')
+const isoDate = z.string().superRefine(isoDateRules)
 
 // maturity_date was removed: nothing in the UI, seed script, or importer ever
 // wrote it (life cover doesn't mature the way an FD does — its renewal date
@@ -12,36 +22,43 @@ const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'expected yyyy-mm-dd')
 // rather than leaving it silently unused again.
 export const lifeInsuranceDetails = z
   .object({
-    policy_number: z.string().min(1).optional(),
-    plan_type: z.string().min(1).optional(),
-    term_years: z.number().int().positive().optional(),
+    policy_number: optionalDetailText(MAX_LENGTH.code),
+    plan_type: optionalDetailText(MAX_LENGTH.short),
+    term_years: optionalYears('Term', 1, 100),
   })
   .strict()
 
 export const generalInsuranceDetails = z
   .object({
-    sub_category: z.enum(['health', 'vehicle', 'other']),
-    insured_asset: z.string().min(1),
-    policy_type: z.string().min(1),
-    policy_number: z.string().min(1).optional(),
+    sub_category: z.enum(['health', 'vehicle', 'other'], { error: 'Choose a category.' }),
+    insured_asset: requiredText('Insured asset', MAX_LENGTH.name),
+    policy_type: requiredText('Policy type', MAX_LENGTH.short),
+    policy_number: optionalDetailText(MAX_LENGTH.code),
   })
   .strict()
 
 export const mutualFundDetails = z
   .object({
-    target_goal: z.number().nonnegative(),
-    goal_horizon_years: z.number().int().positive().optional(),
-    folio_number: z.string().min(1).optional(),
+    target_goal: requiredDetailAmount('Target goal'),
+    // Capped at the family horizon's own limit (families_goal_horizon_positive).
+    goal_horizon_years: optionalYears('Goal horizon', 1, 40),
+    folio_number: optionalDetailText(MAX_LENGTH.code),
   })
   .strict()
 
 export const fixedIncomeDetails = z
   .object({
-    asset_type: z.string().min(1),
+    asset_type: requiredText('Asset type', MAX_LENGTH.short),
     maturity_date: isoDate.optional(),
-    interest_rate: z.number().nonnegative().optional(),
-    payout_frequency: z.string().min(1).optional(),
-    remarks: z.string().optional(),
+    // No deposit or bond pays half its principal a year; 50% catches "750"
+    // typed for 7.50 without rejecting anything real.
+    interest_rate: z
+      .number({ error: 'Enter the rate as a number.' })
+      .min(0, 'Interest rate cannot be negative.')
+      .max(50, 'Interest rate must be 50% or less.')
+      .optional(),
+    payout_frequency: optionalDetailText(MAX_LENGTH.short),
+    remarks: optionalDetailText(MAX_LENGTH.note),
   })
   .strict()
 
@@ -67,8 +84,8 @@ const optionalIsoDate = z
     const trimmed = value.trim()
     return trimmed === '' ? null : trimmed
   })
-  .refine((value) => value === null || /^\d{4}-\d{2}-\d{2}$/.test(value), {
-    message: 'Enter a valid date.',
+  .superRefine((value, ctx) => {
+    if (value !== null) isoDateRules(value, ctx)
   })
 
 const optionalAmount = z
@@ -79,15 +96,15 @@ const optionalAmount = z
     const trimmed = value.trim()
     return trimmed === '' ? null : Number(trimmed)
   })
-  .refine((value) => value === null || (Number.isFinite(value) && value >= 0), {
-    message: 'Enter an amount of zero or more.',
+  .superRefine((value, ctx) => {
+    if (value !== null) amountRules(value, ctx)
   })
 
 const holdingBase = {
-  memberId: z.string().uuid().nullable(),
-  managedBy: z.enum(['self', 'external']),
-  label: z.string().trim().min(1, 'A name for this record is required.'),
-  institution: z.string().trim().transform((v) => v || null),
+  memberId: z.string().uuid('Choose a member from the list.').nullable(),
+  managedBy: z.enum(['self', 'external'], { error: 'Choose who manages this.' }),
+  label: requiredText('A name for this record', MAX_LENGTH.label),
+  institution: optionalText(MAX_LENGTH.name),
   principalAmount: optionalAmount,
   periodicAmount: optionalAmount,
   nextDueDate: optionalIsoDate,

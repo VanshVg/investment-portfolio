@@ -276,7 +276,9 @@ export function EditableSection<T, D>({
               <button type="button" onClick={cancel} className={buttonClass('secondary', 'sm')}>
                 Cancel
               </button>
-              <span className="ml-1 text-[11.5px] text-ink-soft">Enter to save · Esc to cancel</span>
+              <span className="ml-1 text-[11.5px] text-ink-soft">
+                Enter to save · Esc to cancel · <span className="text-rust">*</span> required
+              </span>
             </div>
           </div>
         </td>

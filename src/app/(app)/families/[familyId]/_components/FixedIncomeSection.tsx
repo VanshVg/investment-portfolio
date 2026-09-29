@@ -101,6 +101,7 @@ export function FixedIncomeSection({
           />
           <TextField
             id="fi-label"
+            required
             label="Description"
             value={draft.label}
             onChange={(label) => set({ label })}
@@ -110,6 +111,7 @@ export function FixedIncomeSection({
           <ManagedBySelect id="fi-managed" value={draft.managedBy} onChange={(managedBy) => set({ managedBy })} />
           <TextField
             id="fi-asset"
+            required
             label="Asset type"
             value={detail(draft, 'asset_type')}
             onChange={(value) => set(setDetail(draft, 'asset_type', value))}

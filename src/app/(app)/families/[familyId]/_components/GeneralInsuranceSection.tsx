@@ -127,6 +127,7 @@ export function GeneralInsuranceSection({
           </Field>
           <TextField
             id="gi-label"
+            required
             label="Policy name"
             value={draft.label}
             onChange={(label) => set({ label })}
@@ -161,6 +162,7 @@ export function GeneralInsuranceSection({
         <>
           <TextField
             id="gi-asset"
+            required
             label="Insured asset"
             value={detail(draft, 'insured_asset')}
             onChange={(value) => set(setDetail(draft, 'insured_asset', value))}
@@ -169,6 +171,7 @@ export function GeneralInsuranceSection({
           />
           <TextField
             id="gi-policy-type"
+            required
             label="Policy type"
             value={detail(draft, 'policy_type')}
             onChange={(value) => set(setDetail(draft, 'policy_type', value))}

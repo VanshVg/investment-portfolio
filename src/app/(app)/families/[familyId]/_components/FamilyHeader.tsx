@@ -139,6 +139,7 @@ export function FamilyHeader({
           <div className="grid grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-2 md:grid-cols-3">
             <TextField
               id="name"
+            required
               label="Family name"
               value={draft.name}
               onChange={(name) => set({ name })}
@@ -197,6 +198,9 @@ export function FamilyHeader({
             <button type="button" onClick={cancel} className={buttonClass('secondary', 'sm')}>
               Cancel
             </button>
+            <span className="ml-1 text-[11.5px] text-ink-soft">
+              <span className="text-rust">*</span> required
+            </span>
           </div>
         </form>
       )}

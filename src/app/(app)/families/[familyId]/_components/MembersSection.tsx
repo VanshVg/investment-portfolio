@@ -70,6 +70,7 @@ export function MembersSection({
           <>
             <TextField
               id="member-name"
+            required
               label="Name"
               value={draft.name}
               onChange={(name) => set({ name })}
