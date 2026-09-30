@@ -1,8 +1,10 @@
 import { createServerSupabase } from '@/lib/supabase/server'
 import { PageHeader } from '@/components/ui/PageHeader'
 import { AdvisorMobileForm } from './_components/AdvisorMobileForm'
+import { PasswordForm } from './_components/PasswordForm'
 import { ReminderRulesSection } from './_components/ReminderRulesSection'
 import { updateAdvisorMobile, updateReminderRule } from './actions'
+import { changePassword } from './password-actions'
 
 export default async function ReminderSettingsPage() {
   const supabase = await createServerSupabase()
@@ -31,8 +33,8 @@ export default async function ReminderSettingsPage() {
   return (
     <div>
       <PageHeader
-        title="Reminder settings"
-        description="How far ahead each category's renewal reminders fire, and the number they reach you on."
+        title="Settings"
+        description="How far ahead each category's renewal reminders fire, the number they reach you on, and your password."
       />
 
       <AdvisorMobileForm mobile={profile?.mobile ?? null} updateAdvisorMobile={updateAdvisorMobile} />
@@ -46,6 +48,8 @@ export default async function ReminderSettingsPage() {
         }))}
         updateReminderRule={updateReminderRule}
       />
+
+      <PasswordForm changePassword={changePassword} />
     </div>
   )
 }
