@@ -157,7 +157,7 @@ export function LifeInsuranceSection({
       onDelete={(id) => deleteHolding(id, familyId)}
       deleteConfirm={(row) => ({
         title: `Delete ${row.label}?`,
-        body: 'This hides the policy and stops its reminders. You can restore it from Deleted items.',
+        body: 'This hides the policy and stops its reminders.',
       })}
       addLabel="Add policy"
       emptyMessage="No life insurance recorded."

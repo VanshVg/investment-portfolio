@@ -171,7 +171,7 @@ export function MutualFundSection({
       onDelete={(id) => deleteHolding(id, familyId)}
       deleteConfirm={(row) => ({
         title: `Delete ${row.label}?`,
-        body: 'This hides the holding and stops its reminders. You can restore it from Deleted items.',
+        body: 'This hides the holding and stops its reminders.',
       })}
       addLabel="Add holding"
       emptyMessage="No mutual fund holdings recorded."

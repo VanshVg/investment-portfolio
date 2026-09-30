@@ -112,7 +112,7 @@ export function FamilyList({
       onDelete={deleteFamily}
       deleteConfirm={(row) => ({
         title: `Delete ${row.name}?`,
-        body: `This hides the household, its ${row.memberCount} member record(s) and ${row.holdingCount} financial record(s), and stops their reminders. You can restore it from Deleted items.`,
+        body: `This hides the household, its ${row.memberCount} member record(s) and ${row.holdingCount} financial record(s), and stops their reminders.`,
         requireTyping: row.name,
       })}
       addLabel="Add family"

@@ -67,7 +67,8 @@ export async function updateMember(
 
 export async function deleteMember(id: string, familyId: string): Promise<ActionResult> {
   const supabase = await createServerSupabase()
-  // A soft delete (decision D2): the member is hidden and can be restored.
+  // A soft delete (decision D2): the member is hidden and can be restored by
+  // hand in the database (see docs/deployment.md).
   // Their holdings stay attributed to them and stay on the ledger; reminders
   // for those go to the advisor only, since a removed member is never
   // messaged (see runReminderSweep). The UI states that before confirming.
@@ -82,6 +83,5 @@ export async function deleteMember(id: string, familyId: string): Promise<Action
   if (!data || data.length === 0) return fromEmptyWrite()
 
   revalidatePath(`/families/${familyId}`)
-  revalidatePath('/deleted')
   return { ok: true, id }
 }

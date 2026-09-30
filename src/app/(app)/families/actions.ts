@@ -69,7 +69,8 @@ export async function updateFamily(id: string, input: unknown): Promise<ActionRe
 export async function deleteFamily(id: string): Promise<ActionResult> {
   const supabase = await createServerSupabase()
   // A soft delete (decision D2): the household is stamped and hidden, never
-  // destroyed, and can be restored from Deleted items. Its members and
+  // destroyed, and can be restored by hand in the database (see
+  // docs/deployment.md) — the advisor has no restore screen. Its members and
   // holdings are left untouched — every read hides them through the family —
   // so a restore brings back exactly what was there. The reminder sweep skips
   // it from the next run.
@@ -88,6 +89,5 @@ export async function deleteFamily(id: string): Promise<ActionResult> {
 
   revalidatePath('/families')
   revalidatePath('/renewals')
-  revalidatePath('/deleted')
   return { ok: true, id }
 }

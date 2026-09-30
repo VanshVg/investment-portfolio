@@ -19,10 +19,7 @@ export async function householdIsLive(
     .maybeSingle()
   if (error) return fromPostgrestError(error)
   if (!data) {
-    return {
-      ok: false,
-      formError: 'This household has been deleted. Restore it from Deleted items to add to it.',
-    }
+    return { ok: false, formError: 'This household has been deleted.' }
   }
   return null
 }
