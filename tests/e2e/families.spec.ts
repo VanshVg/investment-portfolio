@@ -27,15 +27,12 @@ test('records a household, its member and a policy, then erases it', async ({ pa
   await page.getByLabel('Mobile').fill('9876543210')
   await page.getByRole('button', { name: 'Save' }).click()
 
-  await expect(page.getByRole('link', { name: FAMILY })).toBeVisible()
-  // Other households can carry this same placeholder number, so the check is
-  // scoped to this family's own row rather than matched page-wide.
-  const familyRow = page.getByRole('row').filter({ has: page.getByRole('link', { name: FAMILY }) })
-  // The number was normalised to E.164 on the way in.
-  await expect(familyRow.getByText('+919876543210')).toBeVisible()
-
-  await page.getByRole('link', { name: FAMILY }).click()
+  // Saving a new household opens its page: members and policies are added
+  // there next.
+  await expect(page).toHaveURL(/\/families\/[0-9a-f-]{36}$/)
   await expect(page.getByRole('heading', { name: FAMILY })).toBeVisible()
+  // The number was normalised to E.164 on the way in.
+  await expect(page.getByText('+919876543210')).toBeVisible()
 
   // Locators are scoped to the section anchors: "Mobile" labels both the
   // household header field and the member field on this page, and "+ Add policy"
@@ -51,6 +48,8 @@ test('records a household, its member and a policy, then erases it', async ({ pa
   await membersSection.getByLabel('WhatsApp consent').check()
   await membersSection.getByRole('button', { name: 'Save' }).click()
   await expect(membersSection.getByText('Consented')).toBeVisible()
+  // Saved and closed: no second blank form opens for another member.
+  await expect(membersSection.getByRole('button', { name: 'Save' })).toHaveCount(0)
 
   // Add a life policy with a detail field.
   await lifeSection.getByRole('button', { name: '+ Add policy' }).click()
@@ -68,6 +67,7 @@ test('records a household, its member and a policy, then erases it', async ({ pa
   // table cell.
   await expect(lifeSection.getByText('HDFC Click2Protect', { exact: true })).toBeVisible()
   await expect(lifeSection.getByText('12-03-2027')).toBeVisible()
+  await expect(lifeSection.getByRole('button', { name: 'Save' })).toHaveCount(0)
 
   // Correcting the date must stick, not snap back to the old grid.
   await lifeSection.getByRole('button', { name: 'Edit HDFC Click2Protect' }).click()
@@ -98,8 +98,9 @@ test('refuses to arm the family delete until the name is typed exactly', async (
   await page.getByRole('button', { name: '+ Add family' }).click()
   await page.getByLabel('Family name').fill(name)
   await page.getByRole('button', { name: 'Save' }).click()
-  await expect(page.getByRole('link', { name })).toBeVisible()
+  await expect(page.getByRole('heading', { name })).toBeVisible()
 
+  await page.goto('/families')
   await page.getByRole('button', { name: `Delete ${name}` }).click()
   // Scoped to the one open dialog, for the same reason as the journey test
   // above: a bare "Delete" is a substring match against every row's own
@@ -127,9 +128,10 @@ test('adds a policy without touching the mouse', async ({ page }) => {
   await page.getByLabel('Family name').fill(name)
   // Enter commits the row: fast entry is a stated requirement, so it is tested.
   await page.getByLabel('Family name').press('Enter')
-  await expect(page.getByRole('link', { name })).toBeVisible()
+  await expect(page.getByRole('heading', { name })).toBeVisible()
 
   // Clean up. Scoped to the dialog for the same reason as the tests above.
+  await page.goto('/families')
   await page.getByRole('button', { name: `Delete ${name}` }).click()
   const dialog = page.getByRole('dialog')
   await dialog.getByLabel(/Type .* to confirm/).fill(name)

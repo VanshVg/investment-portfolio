@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { LifeInsuranceSection } from '@/app/(app)/families/[familyId]/_components/LifeInsuranceSection'
 import { GeneralInsuranceSection } from '@/app/(app)/families/[familyId]/_components/GeneralInsuranceSection'
@@ -15,6 +15,11 @@ import { memberInput } from '@/lib/validation/members'
 import { familyInput } from '@/lib/validation/families'
 import { advisorMobileInput, reminderRuleInput } from '@/lib/validation/reminders'
 import type { ActionResult } from '@/lib/actions/result'
+
+// FamilyList opens a household's page once it is added.
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push: vi.fn() }),
+}))
 
 /**
  * `fromZodError`/`fromPostgrestError` (src/lib/actions/result.ts) return

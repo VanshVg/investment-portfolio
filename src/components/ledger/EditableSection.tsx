@@ -87,6 +87,8 @@ export interface EditableSectionProps<T, D> {
   /** When false, rows are add-and-delete only and no Edit button is rendered. */
   editable?: boolean
   onSave: (draft: D, id: string | null) => Promise<ActionResult>
+  /** Called with the new row's id after an add succeeds, e.g. to open it. */
+  onCreated?: (id: string) => void
   onDelete: (id: string) => Promise<ActionResult>
   /** Delete is offered only when its consequences can be stated. */
   deleteConfirm?: (row: T) => { title: string; body: string; requireTyping?: string }
@@ -119,6 +121,7 @@ export function EditableSection<T, D>({
   emptyDraft,
   editable = true,
   onSave,
+  onCreated,
   onDelete,
   deleteConfirm,
   addLabel,
@@ -191,8 +194,12 @@ export function EditableSection<T, D>({
         return
       }
 
-      if (id === null) open({ kind: 'new' }) // keep the run going
-      else close()
+      // Added or edited, the editor closes and the saved row shows in the
+      // table. It used to reopen blank after an add, for entering a run of
+      // records, but the advisor read the fresh form as a second record
+      // being started and asked for it to go.
+      close()
+      if (id === null) onCreated?.(result.id)
     })
   }
 
