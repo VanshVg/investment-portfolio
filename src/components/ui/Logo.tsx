@@ -16,7 +16,9 @@ export function Logo({ showText = true }: { showText?: boolean }) {
             {BRAND.name}
           </p>
           <p className="mt-0.5 text-[12.5px] tracking-[0.03em] text-[#b9c2d6]">
-            {BRAND.tagline} — {BRAND.subtitle}
+            {BRAND.tagline}
+            {/* Dropped on a phone, where it wraps the tagline onto a second line. */}
+            <span className="hidden sm:inline"> — {BRAND.subtitle}</span>
           </p>
         </div>
       )}

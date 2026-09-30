@@ -4,7 +4,15 @@ import { useOptimistic, useState, useTransition } from 'react'
 import { formatDMY } from '@/lib/domain/dates'
 import { formatINR } from '@/lib/domain/money'
 import { ManagedByPill } from '@/components/ledger/ManagedByPill'
-import { buttonClass, CARD, TABLE, TABLE_HEAD_ROW, TD, TH } from '@/components/ui/styles'
+import {
+  buttonClass,
+  FULL_ROW,
+  TABLE,
+  TABLE_HEAD_ROW,
+  TABLE_WRAP,
+  TD,
+  TH,
+} from '@/components/ui/styles'
 import type { ActionResult } from '@/lib/actions/result'
 import { daysOverdue, isOverdue, type RenewalRow } from '@/lib/queries/renewals'
 import { describeRenewalRow } from './renewal-row-description'
@@ -241,7 +249,7 @@ export function RenewalTable({
   today?: string
 }) {
   return (
-    <div className={`overflow-x-auto ${CARD}`}>
+    <div className={TABLE_WRAP}>
       <table className={TABLE}>
         <thead>
           <tr className={TABLE_HEAD_ROW}>
@@ -262,8 +270,10 @@ export function RenewalTable({
         <tbody>
           {rows.length === 0 && (
             <tr>
-              <td colSpan={7} className="px-3 py-8 text-center text-ink-soft">
-                No renewals in this window.
+              <td colSpan={7} className="p-0">
+                <p className={`${FULL_ROW} px-3 py-8 text-center text-ink-soft`}>
+                  No renewals in this window.
+                </p>
               </td>
             </tr>
           )}

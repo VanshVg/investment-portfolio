@@ -4,13 +4,14 @@ import { Fragment, useEffect, useRef, useState, useTransition } from 'react'
 import type { ActionResult } from '@/lib/actions/result'
 import {
   buttonClass,
-  CARD,
+  FULL_ROW,
   PAGE_LEAD,
   PAGE_TITLE,
   SECTION_LEAD,
   SECTION_TITLE,
   TABLE,
   TABLE_HEAD_ROW,
+  TABLE_WRAP,
   TH,
 } from '@/components/ui/styles'
 import { ConfirmDelete } from './ConfirmDelete'
@@ -238,7 +239,7 @@ export function EditableSection<T, D>({
     return (
       <tr ref={editorRef} onKeyDown={onKeyDown} className="border-b border-line last:border-0">
         <td colSpan={colSpan} className="p-0">
-          <div className="border-l-[3px] border-l-navy bg-[#fbfaf6] px-4 py-4">
+          <div className={`${FULL_ROW} border-l-[3px] border-l-navy bg-[#fbfaf6] px-4 py-4`}>
             <p className="mb-3 text-[12px] font-semibold uppercase tracking-[0.05em] text-navy">
               {mode.kind === 'edit' ? `Editing ${rowLabel(mode.row)}` : addLabel}
             </p>
@@ -310,7 +311,7 @@ export function EditableSection<T, D>({
 
       {toolbar && <div className="mt-3">{toolbar}</div>}
 
-      <div className={`mt-3 overflow-x-auto ${CARD}`}>
+      <div className={`mt-3 ${TABLE_WRAP}`}>
         <table className={TABLE}>
           <thead>
             <tr className={TABLE_HEAD_ROW}>
@@ -339,8 +340,10 @@ export function EditableSection<T, D>({
 
             {rows.length === 0 && !editing && (
               <tr>
-                <td colSpan={colSpan} className="px-3 py-8 text-center text-ink-soft">
-                  {emptyMessage}
+                <td colSpan={colSpan} className="p-0">
+                  <p className={`${FULL_ROW} px-3 py-8 text-center text-ink-soft`}>
+                    {emptyMessage}
+                  </p>
                 </td>
               </tr>
             )}
@@ -397,17 +400,19 @@ export function EditableSection<T, D>({
                       record it is about. */}
                   {id === confirmingId && deleteConfirm && confirming && (
                     <tr className="border-b border-line last:border-0">
-                      <td colSpan={colSpan} className="p-2">
-                        <ConfirmDelete
-                          {...deleteConfirm(confirming)}
-                          error={editing ? null : formError}
-                          pending={pending}
-                          onConfirm={() => remove(confirming)}
-                          onCancel={() => {
-                            setFormError(null)
-                            setConfirming(null)
-                          }}
-                        />
+                      <td colSpan={colSpan} className="p-0">
+                        <div className={`${FULL_ROW} p-2`}>
+                          <ConfirmDelete
+                            {...deleteConfirm(confirming)}
+                            error={editing ? null : formError}
+                            pending={pending}
+                            onConfirm={() => remove(confirming)}
+                            onCancel={() => {
+                              setFormError(null)
+                              setConfirming(null)
+                            }}
+                          />
+                        </div>
                       </td>
                     </tr>
                   )}
