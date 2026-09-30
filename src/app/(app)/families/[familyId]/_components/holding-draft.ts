@@ -16,6 +16,8 @@ export interface HoldingDraft {
   dueFrequency: DueFrequency
   remindersEnabled: boolean
   details: Record<string, unknown>
+  /** The due date when the editor opened; null for a new record. */
+  openedDueDate: string | null
 }
 
 export function emptyHoldingDraft(): HoldingDraft {
@@ -30,6 +32,7 @@ export function emptyHoldingDraft(): HoldingDraft {
     dueFrequency: 'annual',
     remindersEnabled: true,
     details: {},
+    openedDueDate: null,
   }
 }
 
@@ -45,6 +48,7 @@ export function toHoldingDraft(holding: Holding): HoldingDraft {
     dueFrequency: holding.dueFrequency,
     remindersEnabled: holding.remindersEnabled,
     details: (holding.details as Record<string, unknown>) ?? {},
+    openedDueDate: holding.nextDueDate,
   }
 }
 

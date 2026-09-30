@@ -184,7 +184,17 @@ by name or a stale id would silently create this mismatch, and nothing would fla
 The importer must validate `member_id` against `family_id` explicitly; this cannot be
 left to a database constraint that does not exist.
 
-## T9. An edit form opened before a renewal and saved after it undoes the renewal
+## T9. An edit form opened before a renewal and saved after it undoes the renewal — resolved
+
+**Resolved:** the editor now sends the due date it opened with
+(`openedDueDate`), and `updateHolding` judges "did the advisor change the date"
+against that, not against the database. An untouched date writes neither
+schedule column, so a renewal made meanwhile survives; a changed date on top of
+a renewal the form never saw is refused with a message asking for a refresh; and
+a correction only applies while `next_due_date` still holds the value read, so a
+renewal racing the save cannot be overwritten either. Covered by the "form left
+open across a renewal (T9)" tests in `tests/integration/holding-actions.test.ts`.
+
 
 The due-date edit form reads the holding's `next_due_date` when it opens. If the
 advisor renews that row (advancing `next_due_date`) in one tab or click sequence and

@@ -36,6 +36,12 @@ const MEMBER_NOT_IN_FAMILY_ERROR: ActionResult = {
   fieldErrors: { memberId: 'That family member does not belong to this household.' },
 }
 
+const DUE_DATE_MOVED_ERROR: ActionResult = {
+  ok: false,
+  formError:
+    'The due date on this record changed while you were editing it — it may have been marked renewed. Refresh the page and enter the date again.',
+}
+
 const MEMBER_REMOVED_ERROR: ActionResult = {
   ok: false,
   fieldErrors: { memberId: 'That family member has been removed. Choose someone else.' },
@@ -156,16 +162,34 @@ export async function updateHolding(
     if (membershipError) return membershipError
   }
 
-  const schedule = applyDueDateEdit(
-    { anchorDueDate: current.anchor_due_date, nextDueDate: current.next_due_date },
-    value.nextDueDate,
-  )
+  // Whether the advisor changed the date is judged against the date their
+  // form opened with, not the one in the database now. The two differ when
+  // the record was marked renewed while the form was open (T9): judged
+  // against the database, the form's stale date looked like a correction and
+  // re-anchored the schedule backwards, silently undoing the renewal.
+  // Callers that do not say what they opened with fall back to the old rule.
+  const openedDueDate =
+    value.openedDueDate === undefined ? current.next_due_date : value.openedDueDate
+  const dateEdited = value.nextDueDate !== openedDueDate
+
+  // A real correction on top of a move the advisor never saw is refused
+  // rather than guessed at: either reading of it could be wrong.
+  if (dateEdited && current.next_due_date !== openedDueDate) return DUE_DATE_MOVED_ERROR
+
+  // Left untouched, the schedule columns are not written at all, so a renewal
+  // that lands between the read above and this write is not overwritten.
+  const schedule = dateEdited
+    ? applyDueDateEdit(
+        { anchorDueDate: current.anchor_due_date, nextDueDate: current.next_due_date },
+        value.nextDueDate,
+      )
+    : null
 
   // The category pre-read above already proves this row is readable under RLS,
   // but a SELECT policy passing says nothing about the UPDATE policy: they are
   // separate grants in Postgres and can diverge. `.select('id')` makes that
   // check explicit here instead of relying on the pre-read as an accident.
-  const { data: updated, error } = await supabase
+  let update = supabase
     .from('holdings')
     .update({
       member_id: value.memberId,
@@ -174,18 +198,30 @@ export async function updateHolding(
       institution: value.institution,
       principal_amount: value.principalAmount,
       periodic_amount: value.periodicAmount,
-      anchor_due_date: schedule.anchorDueDate,
-      next_due_date: schedule.nextDueDate,
+      ...(schedule && {
+        anchor_due_date: schedule.anchorDueDate,
+        next_due_date: schedule.nextDueDate,
+      }),
       due_frequency: value.dueFrequency,
       reminders_enabled: value.remindersEnabled,
       details: value.details,
     })
     .eq('id', id)
     .is('deleted_at', null)
-    .select('id')
+  // A date correction applies only while the date is still the one read
+  // above, so a renewal racing this save cannot be overwritten either.
+  if (schedule) {
+    update =
+      current.next_due_date === null
+        ? update.is('next_due_date', null)
+        : update.eq('next_due_date', current.next_due_date)
+  }
+  const { data: updated, error } = await update.select('id')
 
   if (error) return fromPostgrestError(error)
-  if (!updated || updated.length === 0) return fromEmptyWrite()
+  if (!updated || updated.length === 0) {
+    return schedule ? DUE_DATE_MOVED_ERROR : fromEmptyWrite()
+  }
 
   await refreshSchedule(supabase, id)
 
