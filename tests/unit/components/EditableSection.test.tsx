@@ -152,6 +152,19 @@ describe('EditableSection', () => {
     await waitFor(() => expect(onCreated).toHaveBeenCalledWith('r1'))
   })
 
+  it('keeps the editor up while an added row is being opened elsewhere', async () => {
+    // Closing first would flash the table, new row and all, before the page
+    // navigates away. The next page replaces the editor instead.
+    const onCreated = vi.fn()
+    setup({ onCreated })
+    fireEvent.click(screen.getByRole('button', { name: '+ Add policy' }))
+    fireEvent.change(screen.getByLabelText('Plan name'), { target: { value: 'First' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => expect(onCreated).toHaveBeenCalledWith('r1'))
+    expect(screen.getByLabelText('Plan name')).toHaveValue('First')
+  })
+
   it('does not report an edit as a new row', async () => {
     const onCreated = vi.fn()
     const { onSave } = setup({ onCreated })
