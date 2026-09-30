@@ -75,6 +75,26 @@ export const SECTION_LEAD = 'mt-0.5 text-[12.5px] text-ink-soft'
 
 export const CARD = 'rounded border border-line bg-paper-raised'
 
+/**
+ * The card a table sits in. It scrolls sideways when the table is wider than
+ * the screen. `relative` is load-bearing: the visually hidden "Actions"
+ * header is absolutely positioned, and without a positioned ancestor inside
+ * the scroll box it is placed against the page instead, escapes the clip,
+ * and widens the whole page on a phone. `@container` lets `FULL_ROW` size
+ * itself to this box.
+ */
+export const TABLE_WRAP = `@container relative overflow-x-auto ${CARD}`
+
+/**
+ * For the content of a cell spanning a whole row — an editor, a delete
+ * confirmation, an empty-table message. A spanning cell is as wide as the
+ * table, which on a phone is far wider than the screen, so its content is
+ * sized to the visible box instead and pinned to its left edge: a form's
+ * fields stay on screen while the data rows still scroll sideways. On a wide
+ * screen the table already fills the box and this changes nothing.
+ */
+export const FULL_ROW = 'sticky left-0 w-[100cqw]'
+
 /** Table chrome shared by every listing, ledger and settings table. */
 export const TABLE = 'w-full border-collapse text-[12.5px]'
 export const TABLE_HEAD_ROW =

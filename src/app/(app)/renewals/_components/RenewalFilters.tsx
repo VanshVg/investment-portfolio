@@ -303,7 +303,7 @@ function CustomRange({
 
   return (
     <>
-      <form onSubmit={submit} className="flex items-end gap-2">
+      <form onSubmit={submit} className="flex flex-wrap items-end gap-2">
         <div>
           <label htmlFor="renewals-from" className={LABEL}>
             From

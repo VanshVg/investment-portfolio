@@ -4,11 +4,12 @@ import { listDeleted } from '@/lib/queries/deleted'
 import { formatDMY, todayInIndia } from '@/lib/domain/dates'
 import { PageHeader } from '@/components/ui/PageHeader'
 import {
-  CARD,
+  FULL_ROW,
   SECTION_LEAD,
   SECTION_TITLE,
   TABLE,
   TABLE_HEAD_ROW,
+  TABLE_WRAP,
   TD,
   TH,
 } from '@/components/ui/styles'
@@ -46,7 +47,7 @@ function Section({
     <section className="mt-8">
       <h2 className={SECTION_TITLE}>{title}</h2>
       <p className={SECTION_LEAD}>{description}</p>
-      <div className={`mt-3 overflow-x-auto ${CARD}`}>
+      <div className={`mt-3 ${TABLE_WRAP}`}>
         <table className={TABLE}>
           <thead>
             <tr className={TABLE_HEAD_ROW}>
@@ -63,8 +64,8 @@ function Section({
           <tbody>
             {empty ? (
               <tr>
-                <td colSpan={headers.length + 1} className="px-3 py-6 text-center text-ink-soft">
-                  Nothing here.
+                <td colSpan={headers.length + 1} className="p-0">
+                  <p className={`${FULL_ROW} px-3 py-6 text-center text-ink-soft`}>Nothing here.</p>
                 </td>
               </tr>
             ) : (

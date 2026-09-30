@@ -5,12 +5,12 @@ import type { ActionResult } from '@/lib/actions/result'
 import { FieldError, fieldErrorProps } from '@/components/ledger/FieldError'
 import {
   buttonClass,
-  CARD,
   inputClass,
   SECTION_LEAD,
   SECTION_TITLE,
   TABLE,
   TABLE_HEAD_ROW,
+  TABLE_WRAP,
   TD,
   TH,
 } from '@/components/ui/styles'
@@ -138,7 +138,7 @@ export function ReminderRulesSection({
         commas — for example <span className="font-mono">30, 15</span>. 0 means &quot;on the due
         date itself.&quot;
       </p>
-      <div className={`mt-3 overflow-x-auto ${CARD}`}>
+      <div className={`mt-3 ${TABLE_WRAP}`}>
         <table className={TABLE}>
           <thead>
             <tr className={TABLE_HEAD_ROW}>
