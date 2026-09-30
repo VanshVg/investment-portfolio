@@ -52,12 +52,15 @@ test('no page is wider than a phone screen', async ({ page }) => {
   await expectNoSidewaysScroll(page)
   await page.getByLabel('Family name').fill(FAMILY)
   await page.getByRole('button', { name: 'Save' }).click()
+  await expect(page.getByRole('heading', { name: FAMILY })).toBeVisible()
+  await expectNoSidewaysScroll(page)
+
+  await page.goto('/families')
   await expect(page.getByRole('link', { name: FAMILY, exact: true })).toBeVisible()
   await expectNoSidewaysScroll(page)
 
   await page.getByRole('link', { name: FAMILY, exact: true }).click()
   await expect(page.getByRole('heading', { name: FAMILY })).toBeVisible()
-  await expectNoSidewaysScroll(page)
 
   const lifeInsurance = page.locator('section', {
     has: page.getByRole('heading', { name: 'Life insurance' }),

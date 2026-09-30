@@ -132,14 +132,35 @@ describe('EditableSection', () => {
     confirmSpy.mockRestore()
   })
 
-  it('reopens a blank draft after adding, so entry can continue', async () => {
+  it('closes the editor after adding, rather than opening another blank one', async () => {
     const { onSave } = setup()
     fireEvent.click(screen.getByRole('button', { name: '+ Add policy' }))
     fireEvent.change(screen.getByLabelText('Plan name'), { target: { value: 'First' } })
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
 
     await waitFor(() => expect(onSave).toHaveBeenCalled())
-    await waitFor(() => expect(screen.getByLabelText('Plan name')).toHaveValue(''))
+    await waitFor(() => expect(screen.queryByLabelText('Plan name')).not.toBeInTheDocument())
+  })
+
+  it('reports the id of an added row, so the page can go to it', async () => {
+    const onCreated = vi.fn()
+    setup({ onCreated })
+    fireEvent.click(screen.getByRole('button', { name: '+ Add policy' }))
+    fireEvent.change(screen.getByLabelText('Plan name'), { target: { value: 'First' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => expect(onCreated).toHaveBeenCalledWith('r1'))
+  })
+
+  it('does not report an edit as a new row', async () => {
+    const onCreated = vi.fn()
+    const { onSave } = setup({ onCreated })
+    fireEvent.click(screen.getByRole('button', { name: 'Edit HDFC Click2Protect' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => expect(onSave).toHaveBeenCalled())
+    await waitFor(() => expect(screen.queryByLabelText('Plan name')).not.toBeInTheDocument())
+    expect(onCreated).not.toHaveBeenCalled()
   })
 
   it('shows the empty message when there is nothing to list', () => {

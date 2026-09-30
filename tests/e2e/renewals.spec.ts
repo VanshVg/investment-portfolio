@@ -40,7 +40,8 @@ async function createFamily(page: Page, name: string) {
   await page.getByRole('button', { name: '+ Add family' }).click()
   await page.getByLabel('Family name').fill(name)
   await page.getByRole('button', { name: 'Save' }).click()
-  await expect(page.getByRole('link', { name, exact: true })).toBeVisible()
+  // Saving a new household opens its page.
+  await expect(page.getByRole('heading', { name, exact: true })).toBeVisible()
 }
 
 /**
@@ -98,7 +99,6 @@ test('finds an upcoming renewal by filtering the window', async ({ page }) => {
   try {
     await signIn(page)
     await createFamily(page, FAMILY)
-    await openFamily(page, FAMILY)
     await addLifePolicy(page, LABEL, due)
 
     await page.goto('/renewals')
@@ -127,7 +127,6 @@ test('marks a policy renewed and sees it roll to the next year', async ({ page }
   try {
     await signIn(page)
     await createFamily(page, FAMILY)
-    await openFamily(page, FAMILY)
     await addLifePolicy(page, LABEL, due)
 
     const lifeSection = page.locator('#life')
@@ -183,7 +182,6 @@ test('records a premium as unpaid and the tick survives a reload', async ({ page
   try {
     await signIn(page)
     await createFamily(page, FAMILY)
-    await openFamily(page, FAMILY)
     await addLifePolicy(page, LABEL, due)
 
     await page.goto('/renewals')

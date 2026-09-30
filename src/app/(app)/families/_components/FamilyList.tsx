@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { EditableSection, SNUG } from '@/components/ledger/EditableSection'
 import { TextField } from '@/components/ledger/Field'
 import { formatDMY } from '@/lib/domain/dates'
@@ -32,6 +33,8 @@ export function FamilyList({
   createFamily: (input: unknown) => Promise<ActionResult>
   deleteFamily: (id: string) => Promise<ActionResult>
 }) {
+  const router = useRouter()
+
   return (
     <EditableSection<FamilySummary, Draft>
       headingLevel={1}
@@ -109,6 +112,9 @@ export function FamilyList({
         assumedCagr: 12,
       })}
       onSave={(draft) => createFamily(draft)}
+      // A new household is empty; the next thing to do is add its members and
+      // policies, which happens on its own page.
+      onCreated={(id) => router.push(`/families/${id}`)}
       onDelete={deleteFamily}
       deleteConfirm={(row) => ({
         title: `Delete ${row.name}?`,
