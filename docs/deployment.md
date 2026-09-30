@@ -138,6 +138,15 @@ from the Supabase dashboard.
 2. `npx supabase db push` — applies only the migrations not yet on the project.
 3. Deploy the code that depends on them.
 
+### Passwords
+
+The advisor changes their own password under Settings → Your password, which
+asks for the current one first. There is no emailed reset link: Supabase's
+built-in mailer only delivers to members of the Supabase team, so a
+"forgot password" email needs an SMTP provider connected first. Until then, a
+forgotten password is set again in Supabase → Authentication → Users → the
+advisor's row, and handed over in person or by phone.
+
 ### Restoring a deleted record
 
 Deleting a household, member or policy in the app never removes it: the row is

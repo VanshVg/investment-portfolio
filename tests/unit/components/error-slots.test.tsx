@@ -10,10 +10,12 @@ import { FamilyHeader } from '@/app/(app)/families/[familyId]/_components/Family
 import { FamilyList } from '@/app/(app)/families/_components/FamilyList'
 import { ReminderRulesSection, type ReminderRuleRow } from '@/app/(app)/settings/reminders/_components/ReminderRulesSection'
 import { AdvisorMobileForm } from '@/app/(app)/settings/reminders/_components/AdvisorMobileForm'
+import { PasswordForm } from '@/app/(app)/settings/reminders/_components/PasswordForm'
 import { holdingDetailSchemas, holdingInput, type HoldingCategory } from '@/lib/validation/holdings'
 import { memberInput } from '@/lib/validation/members'
 import { familyInput } from '@/lib/validation/families'
 import { advisorMobileInput, reminderRuleInput } from '@/lib/validation/reminders'
+import { passwordChangeInput } from '@/lib/validation/account'
 import type { ActionResult } from '@/lib/actions/result'
 
 // FamilyList opens a household's page once it is added.
@@ -133,6 +135,7 @@ const reminderRuleFields = without(
   KNOWN_UNREACHABLE.reminderRule,
 )
 const advisorMobileFields = Object.keys(advisorMobileInput.shape)
+const passwordFields = Object.keys(passwordChangeInput.shape)
 
 function errorsFor(keys: string[]): Record<string, string> {
   const errors: Record<string, string> = {}
@@ -285,6 +288,18 @@ describe('AdvisorMobileForm error slots', () => {
 
     render(<AdvisorMobileForm mobile={null} updateAdvisorMobile={updateAdvisorMobile} />)
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    await expectEveryErrorVisible(fieldErrors)
+  })
+})
+
+describe('PasswordForm error slots', () => {
+  it('shows every producible field error through the real save path', async () => {
+    const fieldErrors = errorsFor(passwordFields)
+    const changePassword = async () => ({ ok: false as const, fieldErrors })
+
+    render(<PasswordForm changePassword={changePassword} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Change password' }))
 
     await expectEveryErrorVisible(fieldErrors)
   })
