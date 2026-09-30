@@ -22,9 +22,15 @@ describe('PrimaryNav', () => {
   it('links to every section, starting with the families list that is home', () => {
     render(<PrimaryNav />)
     const links = screen.getAllByRole('link')
-    expect(links.map((a) => a.textContent)).toEqual(['Families', 'Renewals', 'Settings'])
+    expect(links.map((a) => a.textContent)).toEqual([
+      'Families',
+      'Renewals',
+      'Messages',
+      'Settings',
+    ])
     expect(link('Families')).toHaveAttribute('href', '/families')
     expect(link('Renewals')).toHaveAttribute('href', '/renewals')
+    expect(link('Messages')).toHaveAttribute('href', '/messages')
     expect(link('Settings')).toHaveAttribute('href', '/settings/reminders')
   })
 
