@@ -61,7 +61,10 @@ const KNOWN_UNREACHABLE = {
   // `.refine`/`.min` of its own, so it likewise cannot fail validation.
   // None of these four is "producible": there is nothing a slot would ever
   // have to show.
-  holdingBase: ['managedBy', 'dueFrequency', 'remindersEnabled', 'institution'],
+  // `openedDueDate` has no control at all: the editor copies it from the
+  // row's own stored due date when it opens (toHoldingDraft), so it is always
+  // a date the database already accepted, and null on a new row.
+  holdingBase: ['managedBy', 'dueFrequency', 'remindersEnabled', 'institution', 'openedDueDate'],
   // Per-section exclusions on top of the universal ones above: fields that
   // are part of the shared `holdingBase` schema but that one particular
   // section's editor never renders a control for at all — so, exactly like

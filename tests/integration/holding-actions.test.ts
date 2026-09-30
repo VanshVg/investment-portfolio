@@ -301,6 +301,106 @@ describe('createHolding / updateHolding / deleteHolding server actions', () => {
     await admin.from('holdings').delete().eq('id', holding!.id)
   })
 
+  describe('a form left open across a renewal (T9)', () => {
+    // The form was opened while the policy was due 15-01-2027; before it was
+    // saved, the policy was marked renewed, which advances next_due_date along
+    // the existing grid and leaves the anchor alone.
+    async function renewedWhileFormOpen() {
+      const admin = adminClient()
+      const { data: holding } = await admin
+        .from('holdings')
+        .insert({
+          family_id: familyId,
+          category: 'life_insurance',
+          label: 'Renewed while open',
+          periodic_amount: 10_000,
+          anchor_due_date: '2026-01-15',
+          next_due_date: '2027-01-15',
+        })
+        .select()
+        .single()
+      await admin.from('holdings').update({ next_due_date: '2028-01-15' }).eq('id', holding!.id)
+      return holding!.id as string
+    }
+
+    const staleForm = {
+      memberId: null,
+      managedBy: 'self',
+      label: 'Renewed while open',
+      institution: '',
+      principalAmount: null,
+      periodicAmount: 12_000,
+      dueFrequency: 'annual',
+      remindersEnabled: true,
+      category: 'life_insurance',
+      details: {},
+      openedDueDate: '2027-01-15',
+    }
+
+    async function schedule(id: string) {
+      const { data } = await adminClient()
+        .from('holdings')
+        .select('anchor_due_date, next_due_date, periodic_amount')
+        .eq('id', id)
+        .single()
+      return data
+    }
+
+    it('keeps the renewal when the stale form saves other fields and leaves the date alone', async () => {
+      const id = await renewedWhileFormOpen()
+      const result = await updateHolding(id, familyId, { ...staleForm, nextDueDate: '2027-01-15' })
+      expect(result.ok).toBe(true)
+
+      const after = await schedule(id)
+      expect(after?.next_due_date).toBe('2028-01-15')
+      expect(after?.anchor_due_date).toBe('2026-01-15')
+      // The field the advisor did change is saved.
+      expect(Number(after?.periodic_amount)).toBe(12_000)
+
+      await adminClient().from('holdings').delete().eq('id', id)
+    })
+
+    it('refuses a date change made on top of a renewal it never saw, and writes nothing', async () => {
+      const id = await renewedWhileFormOpen()
+      const result = await updateHolding(id, familyId, { ...staleForm, nextDueDate: '2027-02-01' })
+      expect(result.ok).toBe(false)
+      if (result.ok) throw new Error('expected a refusal')
+      expect(result.formError).toMatch(/due date .* changed/i)
+
+      const after = await schedule(id)
+      expect(after).toMatchObject({ next_due_date: '2028-01-15', anchor_due_date: '2026-01-15' })
+      expect(Number(after?.periodic_amount)).toBe(10_000)
+
+      await adminClient().from('holdings').delete().eq('id', id)
+    })
+
+    it('still re-anchors a date change when nothing moved underneath the form', async () => {
+      const admin = adminClient()
+      const { data: holding } = await admin
+        .from('holdings')
+        .insert({
+          family_id: familyId,
+          category: 'life_insurance',
+          label: 'Renewed while open',
+          anchor_due_date: '2026-01-15',
+          next_due_date: '2027-01-15',
+        })
+        .select()
+        .single()
+      const result = await updateHolding(holding!.id, familyId, {
+        ...staleForm,
+        nextDueDate: '2027-02-01',
+      })
+      expect(result.ok).toBe(true)
+      expect(await schedule(holding!.id)).toMatchObject({
+        next_due_date: '2027-02-01',
+        anchor_due_date: '2027-02-01',
+      })
+
+      await admin.from('holdings').delete().eq('id', holding!.id)
+    })
+  })
+
   it('soft-deletes a holding through the action, keeping its due instances for a restore', async () => {
     const admin = adminClient()
     const { data: holding } = await admin

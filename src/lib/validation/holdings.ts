@@ -114,6 +114,12 @@ const holdingBase = {
   nextDueDate: optionalIsoDate,
   dueFrequency: z.enum(['annual', 'half_yearly', 'quarterly', 'monthly', 'one_time']),
   remindersEnabled: z.boolean(),
+  /**
+   * The due date the edit form was opened with. It is how an update tells
+   * "the advisor changed the date" from "the date moved underneath an open
+   * form" (a renewal in the meantime) — see updateHolding. Absent on a create.
+   */
+  openedDueDate: optionalIsoDate.optional(),
 }
 
 /**
