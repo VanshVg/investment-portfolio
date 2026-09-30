@@ -4,6 +4,7 @@ import { useState, useTransition } from 'react'
 import type { ActionResult } from '@/lib/actions/result'
 import { MIN_PASSWORD_LENGTH } from '@/lib/validation/account'
 import { FieldError, fieldErrorProps } from '@/components/ledger/FieldError'
+import { PasswordToggle } from '@/components/ui/PasswordToggle'
 import {
   buttonClass,
   CARD,
@@ -15,10 +16,25 @@ import {
 
 type Field = 'currentPassword' | 'newPassword' | 'confirmPassword'
 
-const FIELDS: { id: Field; label: string; autoComplete: string }[] = [
+/**
+ * `revealAs` gives a field an eye button, named for screen readers. The
+ * current password has none: it is typed once, and showing it on screen
+ * gains nothing. The new one is worth checking before it is committed to.
+ */
+const FIELDS: { id: Field; label: string; autoComplete: string; revealAs?: string }[] = [
   { id: 'currentPassword', label: 'Current password', autoComplete: 'current-password' },
-  { id: 'newPassword', label: 'New password', autoComplete: 'new-password' },
-  { id: 'confirmPassword', label: 'Confirm new password', autoComplete: 'new-password' },
+  {
+    id: 'newPassword',
+    label: 'New password',
+    autoComplete: 'new-password',
+    revealAs: 'new password',
+  },
+  {
+    id: 'confirmPassword',
+    label: 'Confirm new password',
+    autoComplete: 'new-password',
+    revealAs: 'confirmed password',
+  },
 ]
 
 const EMPTY: Record<Field, string> = { currentPassword: '', newPassword: '', confirmPassword: '' }
@@ -38,6 +54,7 @@ export function PasswordForm({
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [formError, setFormError] = useState<string | null>(null)
   const [changed, setChanged] = useState(false)
+  const [visible, setVisible] = useState<Partial<Record<Field, boolean>>>({})
   const [pending, startTransition] = useTransition()
 
   function submit(event: React.FormEvent) {
@@ -52,6 +69,7 @@ export function PasswordForm({
         return
       }
       setValues(EMPTY)
+      setVisible({})
       setErrors({})
       setFormError(null)
       setChanged(true)
@@ -71,18 +89,30 @@ export function PasswordForm({
             <label htmlFor={field.id} className={FIELD_LABEL}>
               {field.label}
             </label>
-            <input
-              id={field.id}
-              type="password"
-              autoComplete={field.autoComplete}
-              value={values[field.id]}
-              onChange={(event) => {
-                setValues((current) => ({ ...current, [field.id]: event.target.value }))
-                setChanged(false)
-              }}
-              className={inputClass('md')}
-              {...fieldErrorProps(field.id, errors[field.id])}
-            />
+            <div className="relative">
+              <input
+                id={field.id}
+                type={visible[field.id] ? 'text' : 'password'}
+                autoComplete={field.autoComplete}
+                value={values[field.id]}
+                onChange={(event) => {
+                  setValues((current) => ({ ...current, [field.id]: event.target.value }))
+                  setChanged(false)
+                }}
+                className={`${inputClass('md')} ${field.revealAs ? 'pr-10' : ''}`}
+                {...fieldErrorProps(field.id, errors[field.id])}
+              />
+              {field.revealAs && (
+                <PasswordToggle
+                  visible={visible[field.id] ?? false}
+                  onToggle={() =>
+                    setVisible((current) => ({ ...current, [field.id]: !current[field.id] }))
+                  }
+                  controls={field.id}
+                  name={field.revealAs}
+                />
+              )}
+            </div>
             <FieldError id={field.id} message={errors[field.id]} />
           </div>
         ))}
