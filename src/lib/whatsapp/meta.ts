@@ -49,12 +49,12 @@ export function createMetaProvider(
   }
 
   return {
-    sendTemplate(to, template, params) {
+    sendTemplate(to, template, params, language) {
       return post(to, {
         type: 'template',
         template: {
           name: template,
-          language: { code: config.language },
+          language: { code: language ?? config.language },
           ...(params.length > 0 && {
             components: [
               { type: 'body', parameters: params.map((text) => ({ type: 'text', text })) },

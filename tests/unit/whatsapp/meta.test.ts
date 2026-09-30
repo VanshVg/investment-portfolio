@@ -64,6 +64,13 @@ describe('Meta provider', () => {
     expect(body.template).toEqual({ name: 'hello_world', language: { code: 'en' } })
   })
 
+  it('sends in a different language when asked, as Meta’s own hello_world needs', async () => {
+    const fetchImpl = respond(200, { messages: [{ id: 'wamid.4' }] })
+    const provider = createMetaProvider(CONFIG, fetchImpl)
+    await provider.sendTemplate('+919876543210', 'hello_world', [], 'en_US')
+    expect(bodyOf(fetchImpl).template.language).toEqual({ code: 'en_US' })
+  })
+
   it('sends a plain text message', async () => {
     const fetchImpl = respond(200, { messages: [{ id: 'wamid.3' }] })
     const provider = createMetaProvider(CONFIG, fetchImpl)

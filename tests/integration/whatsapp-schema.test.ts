@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { adminClient, ensureUser, signedInClient } from '../helpers/db'
+import { getWhatsAppMode, saveWhatsAppMode } from '@/lib/whatsapp/settings'
 
 const ADMIN_EMAIL = 'whatsapp-schema-admin@example.test'
 const CLIENT_EMAIL = 'whatsapp-schema-client@example.test'
@@ -78,6 +79,25 @@ describe('app_settings', () => {
     expect(written ?? []).toEqual([])
   })
 
+  // Saving lives here, not in the settings-action suite: this is the one
+  // file that writes the shared row, so no parallel suite can race it.
+  it('saves and reads the mode through the settings helpers, as the admin', async () => {
+    const { data } = await admin.auth.admin.listUsers()
+    const userId = data.users.find((user) => user.email === ADMIN_EMAIL)!.id
+    expect(await saveWhatsAppMode(asAdmin, 'live', userId)).toBe(true)
+    expect(await getWhatsAppMode(asAdmin)).toBe('live')
+    const { data: row } = await admin.from('app_settings').select('updated_by').single()
+    expect(row!.updated_by).toBe(userId)
+    await admin.from('app_settings').update({ whatsapp_mode: 'off' }).eq('id', true)
+  })
+
+  it('reports that a client-role account could not save the mode', async () => {
+    const { data } = await admin.auth.admin.listUsers()
+    const clientId = data.users.find((user) => user.email === CLIENT_EMAIL)!.id
+    expect(await saveWhatsAppMode(asClient, 'live', clientId)).toBe(false)
+    expect(await getWhatsAppMode(asClient)).toBe('off')
+  })
+
   it('refuses a second row', async () => {
     const { error } = await admin.from('app_settings').insert({ id: false })
     expect(error).not.toBeNull()
@@ -85,7 +105,7 @@ describe('app_settings', () => {
 })
 
 describe('withdraw_consent_by_reply', () => {
-  it('withdraws consent for live members with that number, recorded as the client’s reply', async () => {
+  it('withdraws consent for live members with that number, as the client’s reply', async () => {
     const live = await member({ mobile: MOBILE, whatsapp_consent: true })
     const removed = await member({
       mobile: MOBILE,

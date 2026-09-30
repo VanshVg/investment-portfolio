@@ -14,6 +14,9 @@ export const TEMPLATES = {
   test: 'hello_world',
 } as const
 
+/** hello_world exists only in US English, whatever language the others use. */
+export const TEST_TEMPLATE_LANGUAGE = 'en_US'
+
 const MAX_PARAM_LENGTH = 1000
 const SUMMARY_ITEMS = 5
 

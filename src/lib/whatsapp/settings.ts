@@ -15,3 +15,17 @@ export async function getWhatsAppMode(client: SupabaseClient<Database>): Promise
   if (error || !data) return 'off'
   return data.whatsapp_mode
 }
+
+/** Whether the save took: an account without the admin role is refused by RLS, silently. */
+export async function saveWhatsAppMode(
+  client: SupabaseClient<Database>,
+  mode: WhatsAppMode,
+  userId: string,
+): Promise<boolean> {
+  const { data, error } = await client
+    .from('app_settings')
+    .update({ whatsapp_mode: mode, updated_at: new Date().toISOString(), updated_by: userId })
+    .eq('id', true)
+    .select('id')
+  return !error && (data?.length ?? 0) > 0
+}
