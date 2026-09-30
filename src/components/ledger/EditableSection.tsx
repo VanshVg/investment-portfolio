@@ -194,12 +194,21 @@ export function EditableSection<T, D>({
         return
       }
 
-      // Added or edited, the editor closes and the saved row shows in the
-      // table. It used to reopen blank after an add, for entering a run of
-      // records, but the advisor read the fresh form as a second record
-      // being started and asked for it to go.
+      // An added row with a page of its own is opened straight away. The
+      // editor stays up, still "Saving…", until that page replaces it:
+      // closing first flashed the table, new row and all, before the
+      // navigation. Called inside a transition again because updates after
+      // an `await` fall outside the one that started this save.
+      if (id === null && onCreated) {
+        const newId = result.id
+        startTransition(() => onCreated(newId))
+        return
+      }
+
+      // Otherwise the editor closes and the saved row shows in the table. It
+      // used to reopen blank after an add, for entering a run of records, but
+      // the advisor read the fresh form as a second record being started.
       close()
-      if (id === null) onCreated?.(result.id)
     })
   }
 
