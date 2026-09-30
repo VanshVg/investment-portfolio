@@ -52,7 +52,37 @@ describe('PasswordForm', () => {
     expect(screen.queryByRole('status')).not.toBeInTheDocument()
   })
 
-  it('never shows a password in plain text or offers it to autofill as a login', () => {
+  it('reveals and re-hides each new-password field on its own, but never the current one', () => {
+    render(<PasswordForm changePassword={async () => ({ ok: true, id: 'u1' })} />)
+    const next = screen.getByLabelText('New password')
+    const confirm = screen.getByLabelText('Confirm new password')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show new password' }))
+    expect(next).toHaveAttribute('type', 'text')
+    expect(confirm).toHaveAttribute('type', 'password')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show confirmed password' }))
+    expect(confirm).toHaveAttribute('type', 'text')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Hide new password' }))
+    expect(next).toHaveAttribute('type', 'password')
+
+    expect(screen.queryByRole('button', { name: /current password/i })).not.toBeInTheDocument()
+  })
+
+  it('hides both new passwords again once the change is saved', async () => {
+    render(<PasswordForm changePassword={async () => ({ ok: true, id: 'u1' })} />)
+    fill('old-password-123', 'new-password-4567', 'new-password-4567')
+    fireEvent.click(screen.getByRole('button', { name: 'Show new password' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Show confirmed password' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Change password' }))
+
+    await screen.findByRole('status')
+    expect(screen.getByLabelText('New password')).toHaveAttribute('type', 'password')
+    expect(screen.getByLabelText('Confirm new password')).toHaveAttribute('type', 'password')
+  })
+
+  it('starts with every password hidden or offers it to autofill as a login', () => {
     render(<PasswordForm changePassword={async () => ({ ok: true, id: 'u1' })} />)
     expect(screen.getByLabelText('Current password')).toHaveAttribute('type', 'password')
     expect(screen.getByLabelText('Current password')).toHaveAttribute('autocomplete', 'current-password')
