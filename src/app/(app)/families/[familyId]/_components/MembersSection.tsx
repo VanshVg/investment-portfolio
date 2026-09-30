@@ -136,8 +136,8 @@ export function MembersSection({
           title: `Remove ${row.name}?`,
           body:
             count > 0
-              ? `${count} financial record(s) are linked to ${row.name}. They stay on this household's ledger, still marked as ${row.name}'s, and their reminders go to you only. You can restore ${row.name} from Deleted items.`
-              : `${row.name} has no financial records linked. You can restore ${row.name} from Deleted items.`,
+              ? `${count} financial record(s) are linked to ${row.name}. They stay on this household's ledger, still marked as ${row.name}'s, and their reminders go to you only.`
+              : `${row.name} has no financial records linked.`,
         }
       }}
       addLabel="Add family member"

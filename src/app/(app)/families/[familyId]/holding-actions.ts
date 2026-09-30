@@ -196,7 +196,8 @@ export async function updateHolding(
 export async function deleteHolding(id: string, familyId: string): Promise<ActionResult> {
   const supabase = await createServerSupabase()
   // A soft delete (decision D2): hidden from every listing and from the
-  // reminder sweep, restorable from Deleted items. Its due instances and
+  // reminder sweep, restorable by hand in the database (see
+  // docs/deployment.md). Its due instances and
   // reminder log are kept, so a restore brings its schedule back with it.
   // RLS applies its USING clause to UPDATE as a row filter, not an error, so
   // `.select('id')` is required to tell "deleted" from "RLS silently kept
@@ -212,6 +213,5 @@ export async function deleteHolding(id: string, familyId: string): Promise<Actio
 
   revalidatePath(`/families/${familyId}`)
   revalidatePath('/renewals')
-  revalidatePath('/deleted')
   return { ok: true, id }
 }

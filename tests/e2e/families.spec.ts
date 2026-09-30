@@ -136,3 +136,12 @@ test('adds a policy without touching the mouse', async ({ page }) => {
   await dialog.getByRole('button', { name: 'Delete' }).click()
   await expect(page.getByRole('link', { name })).toHaveCount(0)
 })
+
+test('offers the advisor no deleted-items page: deleted records are kept, not browsable', async ({
+  page,
+}) => {
+  await signIn(page)
+  await expect(page.getByRole('link', { name: 'Deleted items' })).toHaveCount(0)
+  const response = await page.goto('/deleted')
+  expect(response?.status()).toBe(404)
+})

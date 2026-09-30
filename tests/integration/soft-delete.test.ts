@@ -5,7 +5,6 @@ import { adminClient, ensureUser, signedInClient } from '../helpers/db'
 import { fromISODate, toISODate, todayInIndia } from '@/lib/domain/dates'
 import { getFamily, listFamilies, listHoldings, listMembers } from '@/lib/queries/families'
 import { listOverdue, listRenewals } from '@/lib/queries/renewals'
-import { listDeleted } from '@/lib/queries/deleted'
 import { listLiveHoldingIds } from '@/lib/reminders/live-holdings'
 import { runReminderSweep } from '@/lib/reminders/sweep'
 
@@ -32,7 +31,6 @@ mockCreateServerSupabase.mockImplementation(() => signedInClient(EMAIL, PASSWORD
 const { deleteFamily } = await import('@/app/(app)/families/actions')
 const { deleteMember } = await import('@/app/(app)/families/[familyId]/member-actions')
 const { deleteHolding } = await import('@/app/(app)/families/[familyId]/holding-actions')
-const { restoreFamily, restoreMember, restoreHolding } = await import('@/app/(app)/deleted/actions')
 
 const admin = adminClient()
 let client: SupabaseClient
@@ -40,6 +38,29 @@ let advisorId: string
 const today = todayInIndia()
 const day = (offset: number) => toISODate(addDays(fromISODate(today)!, offset))
 const familyIds: string[] = []
+
+type SoftDeletable = 'families' | 'family_members' | 'holdings'
+
+/** Still in the database, stamped as deleted — kept, not destroyed. */
+async function keptAsDeleted(table: SoftDeletable, id: string): Promise<boolean> {
+  const { data } = await admin.from(table).select('deleted_at').eq('id', id).single()
+  return data?.deleted_at != null
+}
+
+/**
+ * The advisor has no restore screen; a record is brought back by clearing
+ * its stamp in the database, as docs/deployment.md describes. These tests do
+ * the same, to prove that is all a restore needs.
+ */
+async function restoreByHand(table: SoftDeletable, id: string) {
+  const { data } = await admin
+    .from(table)
+    .update({ deleted_at: null })
+    .eq('id', id)
+    .not('deleted_at', 'is', null)
+    .select('id')
+  expect(data).toHaveLength(1)
+}
 
 /** A household with one consented member, and a policy of theirs due in ten days. */
 async function household(name: string) {
@@ -165,14 +186,12 @@ describe('soft delete', () => {
     expect(seen.liveHoldingIds).toEqual([])
     expect(await queuedFor(h.instanceId)).toEqual([])
 
-    const deleted = await listDeleted(client)
-    expect(deleted.holdings.map((x) => x.id)).toContain(h.holdingId)
+    expect(await keptAsDeleted('holdings', h.holdingId)).toBe(true)
 
-    expect((await restoreHolding(h.holdingId)).ok).toBe(true)
+    await restoreByHand('holdings', h.holdingId)
     const back = await everywhere(h, 'Soft delete — holding')
     expect(back.holdingIds).toContain(h.holdingId)
     expect(back.renewalHoldingIds).toContain(h.holdingId)
-    expect((await listDeleted(client)).holdings.map((x) => x.id)).not.toContain(h.holdingId)
   })
 
   it('a removed member disappears from the household but keeps their policies, which then remind the advisor only', async () => {
@@ -191,8 +210,8 @@ describe('soft delete', () => {
     const all = await listMembers(client, h.familyId, { includeRemoved: true })
     expect(all).toEqual([expect.objectContaining({ id: h.memberId, removed: true })])
 
-    expect((await listDeleted(client)).members.map((m) => m.id)).toContain(h.memberId)
-    expect((await restoreMember(h.memberId)).ok).toBe(true)
+    expect(await keptAsDeleted('family_members', h.memberId)).toBe(true)
+    await restoreByHand('family_members', h.memberId)
     expect((await everywhere(h, 'Soft delete — member')).memberIds).toEqual([h.memberId])
     expect(await queuedFor(h.instanceId)).toEqual(['advisor', 'client'])
   })
@@ -211,13 +230,13 @@ describe('soft delete', () => {
     })
     expect(await queuedFor(h.instanceId)).toEqual([])
 
-    const deleted = await listDeleted(client)
-    expect(deleted.families.map((f) => f.id)).toContain(h.familyId)
-    // Its members and holdings are listed under the family, not one by one.
-    expect(deleted.members.map((m) => m.id)).not.toContain(h.memberId)
-    expect(deleted.holdings.map((x) => x.id)).not.toContain(h.holdingId)
+    expect(await keptAsDeleted('families', h.familyId)).toBe(true)
+    // Its members and holdings are hidden through the family, not stamped one
+    // by one, so clearing the family's stamp alone brings everything back.
+    expect(await keptAsDeleted('family_members', h.memberId)).toBe(false)
+    expect(await keptAsDeleted('holdings', h.holdingId)).toBe(false)
 
-    expect((await restoreFamily(h.familyId)).ok).toBe(true)
+    await restoreByHand('families', h.familyId)
     const back = await everywhere(h, 'Soft delete — family')
     expect(back).toMatchObject({ familyListed: true, familyOpens: true, memberIds: [h.memberId] })
     expect(back.holdingIds).toEqual(expect.arrayContaining([h.holdingId, h.overdueHoldingId]))
@@ -235,7 +254,5 @@ describe('soft delete', () => {
     const h = await household('Soft delete — stale')
     expect((await deleteHolding(h.holdingId, h.familyId)).ok).toBe(true)
     expect((await deleteHolding(h.holdingId, h.familyId)).ok).toBe(false)
-    expect((await restoreHolding(h.holdingId)).ok).toBe(true)
-    expect((await restoreHolding(h.holdingId)).ok).toBe(false)
   })
 })

@@ -24,8 +24,11 @@ forgot to set the role would have minted full access. It now defaults to
 ## D2. Deleting a family member is not erasure — decided: soft delete, everywhere
 
 **Decision:** nothing is destroyed. Families, members and holdings are
-soft-deleted (`deleted_at`, `20260929092000_soft_delete.sql`) and can be
-restored from **Deleted items** (`/deleted`).
+soft-deleted (`deleted_at`, `20260929092000_soft_delete.sql`) and stay in the
+database. The advisor has no screen for them (a **Deleted items** page existed
+briefly and was removed at the advisor's request); a record is restored by
+clearing its `deleted_at` in the database — see "Restoring a deleted record"
+in `docs/deployment.md`.
 
 - Every read filters deleted rows out: the families list and its counts, the
   workspace, the renewals and overdue listings, the daily cron's holding list,
@@ -250,5 +253,6 @@ today is a manual hard delete in the database. `consent_events` and
 `reminder_log.recipient_mobile` would need to be covered by it too.
 
 **Trigger:** the first erasure request, or any move towards more than one user
-of the system. The likely shape is a deliberate "Erase permanently" action on
-the Deleted items page, typed-confirmation gated, separate from everyday delete.
+of the system. With no deleted-items screen in the app, the likely shape is a
+scripted, reviewed hard delete run by whoever operates the database, covering
+the tables above.

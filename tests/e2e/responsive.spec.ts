@@ -70,7 +70,7 @@ test('no page is wider than a phone screen', async ({ page }) => {
   await expectOnScreen(page, lifeInsurance.getByRole('button', { name: 'Save' }))
   await lifeInsurance.getByRole('button', { name: 'Cancel' }).click()
 
-  for (const path of ['/renewals', '/settings/reminders', '/deleted']) {
+  for (const path of ['/renewals', '/settings/reminders']) {
     await page.goto(path)
     await expectNoSidewaysScroll(page)
   }

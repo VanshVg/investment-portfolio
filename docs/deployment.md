@@ -97,8 +97,10 @@ script deletes and recreates a household. It refuses to run unless
 - Settings → enter the advisor's mobile number (reminders for policies held
   elsewhere go to it).
 - Round trip: add a test household with one policy → it appears on Renewals →
-  delete it → it appears under Deleted items. Then remove it for good with SQL
-  (there is no in-app purge yet — see T14 in `docs/follow-ups.md`).
+  delete it → it disappears from the app but is still in the database with
+  `deleted_at` set (see [Restoring a deleted record](#restoring-a-deleted-record)).
+  Then remove it for good with SQL (there is no in-app purge — see T14 in
+  `docs/follow-ups.md`).
 - Trigger the reminder sweep once by hand; the response is counts only:
 
   ```bash
@@ -135,6 +137,35 @@ from the Supabase dashboard.
 1. Take a backup.
 2. `npx supabase db push` — applies only the migrations not yet on the project.
 3. Deploy the code that depends on them.
+
+### Restoring a deleted record
+
+Deleting a household, member or policy in the app never removes it: the row is
+stamped with `deleted_at` and hidden everywhere, including from reminders. The
+advisor has no screen for deleted records; bringing one back is done here, in
+the Supabase SQL editor or with `npx supabase db query --linked "<sql>"`.
+
+Find it:
+
+```sql
+select 'household' as kind, id, name, deleted_at from families where deleted_at is not null
+union all
+select 'member', id, name, deleted_at from family_members where deleted_at is not null
+union all
+select 'holding', id, category::text, deleted_at from holdings where deleted_at is not null
+order by deleted_at desc;
+```
+
+Restore it by clearing the stamp on that one row:
+
+```sql
+update families set deleted_at = null where id = '<id>' returning id, name;
+-- or: update family_members ... / update holdings ...
+```
+
+A household's members and holdings are hidden through the household, not
+stamped themselves, so restoring the household brings them all back. Reminders
+resume from the next daily run.
 
 ### Secrets
 

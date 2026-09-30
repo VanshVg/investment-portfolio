@@ -27,11 +27,6 @@ export default async function FamiliesPage({
           </Link>
         </p>
       )}
-      {/* Soft-deleted records (decision D2) live here, one click from the list
-          they were deleted from. */}
-      <Link href="/deleted" className={`ml-auto ${TEXT_LINK}`}>
-        Deleted items
-      </Link>
     </div>
   )
 
