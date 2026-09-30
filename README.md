@@ -40,6 +40,7 @@ Sign in at http://localhost:3000/login with the credentials in `.env.local`.
 ## Layout
 
 - `src/lib/domain/` — pure business logic; no framework imports, heavily tested
+- `src/lib/whatsapp/` — the WhatsApp sender, Meta Cloud API client and webhook handling; off until configured (see `docs/deployment.md`)
 - `src/lib/validation/` — Zod schemas for category-specific holding fields
 - `src/lib/queries/` — composed database reads
 - `supabase/migrations/` — schema source of truth

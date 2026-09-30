@@ -156,7 +156,16 @@ both member actions parse through `memberInput`).
 "toggle consent" action that updates `whatsapp_consent` alone without re-validating the
 stored mobile. Worth re-reading this entry when the importer is designed.
 
-## T7. Milestone 4 must re-check consent and managed-by at send time, not trust the queue
+## T7. Milestone 4 must re-check consent and managed-by at send time, not trust the queue — resolved
+
+**Resolved in Milestone 4:** `src/lib/whatsapp/recheck.ts` decides every queued
+row again from current data immediately before sending — deleted holding or
+household, reminders off, paid / off-schedule / renewed past, expired, managed
+elsewhere, member removed, consent withdrawn, no number — and records the reason
+on each skipped row. A consented client whose number changed is sent to the new
+number (D3). Covered by `tests/unit/whatsapp/recheck.test.ts` and
+`tests/integration/whatsapp-send.test.ts`.
+
 
 The sweep resolves consent, `whatsapp_consent`, and a holding's `managed_by` exactly
 once — at the moment it queues a `reminder_log` row in `pending`. Nothing about that

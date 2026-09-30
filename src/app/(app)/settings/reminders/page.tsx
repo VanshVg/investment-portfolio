@@ -5,6 +5,10 @@ import { PasswordForm } from './_components/PasswordForm'
 import { ReminderRulesSection } from './_components/ReminderRulesSection'
 import { updateAdvisorMobile, updateReminderRule } from './actions'
 import { changePassword } from './password-actions'
+import { WhatsAppSection } from './_components/WhatsAppSection'
+import { sendTestMessage, setWhatsAppMode } from './whatsapp-actions'
+import { whatsappConfig } from '@/lib/whatsapp/config'
+import { getWhatsAppMode } from '@/lib/whatsapp/settings'
 
 export default async function ReminderSettingsPage() {
   const supabase = await createServerSupabase()
@@ -29,15 +33,26 @@ export default async function ReminderSettingsPage() {
   const { data: profile } = user
     ? await supabase.from('profiles').select('mobile').eq('id', user.id).maybeSingle()
     : { data: null }
+  const whatsapp = whatsappConfig()
+  const whatsappMode = await getWhatsAppMode(supabase)
 
   return (
     <div>
       <PageHeader
         title="Settings"
-        description="How far ahead each category's renewal reminders fire, the number they reach you on, and your password."
+        description="Your number, WhatsApp, how far ahead each category's reminders fire, and your password."
       />
 
       <AdvisorMobileForm mobile={profile?.mobile ?? null} updateAdvisorMobile={updateAdvisorMobile} />
+
+      <WhatsAppSection
+        connected={whatsapp !== null}
+        numberHint={whatsapp ? whatsapp.phoneNumberId.slice(-4) : null}
+        mode={whatsappMode}
+        advisorHasMobile={Boolean(profile?.mobile)}
+        setWhatsAppMode={setWhatsAppMode}
+        sendTestMessage={sendTestMessage}
+      />
 
       <ReminderRulesSection
         rules={(rules ?? []).map((rule) => ({

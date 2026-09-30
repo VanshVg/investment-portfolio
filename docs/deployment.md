@@ -85,6 +85,9 @@ script deletes and recreates a household. It refuses to run unless
    | `SUPABASE_SERVICE_ROLE_KEY` | Supabase → Project Settings → API |
    | `CRON_SECRET` | a fresh random value: `openssl rand -hex 32` |
 
+   WhatsApp is not needed to deploy. Without its variables the app ships with
+   WhatsApp switched off; see [WhatsApp](#whatsapp) to connect it later.
+
    Use a new `CRON_SECRET` for production, not the one from `.env.local`.
 3. Deploy. The daily cron in `vercel.json` registers with the deployment. On
    Hobby it runs once a day at some point within the scheduled hour, not at an
@@ -175,6 +178,46 @@ update families set deleted_at = null where id = '<id>' returning id, name;
 A household's members and holdings are hidden through the household, not
 stamped themselves, so restoring the household brings them all back. Reminders
 resume from the next daily run.
+
+### WhatsApp
+
+Reminders go out through Meta's WhatsApp Cloud API, from the daily cron, after
+the sweep. The design, including the exact template wording to submit, is
+`docs/specs/2026-09-30-milestone-4-whatsapp-sender-design.md`.
+
+Until all four required variables below are set, the app is **not connected**:
+Settings shows "Not connected", the mode cannot leave Off, nothing is sent, and
+`/api/whatsapp/webhook` answers 404.
+
+| Variable (Production only) | Value |
+|---|---|
+| `WHATSAPP_ACCESS_TOKEN` | A permanent system-user token with `whatsapp_business_messaging` |
+| `WHATSAPP_PHONE_NUMBER_ID` | The sending number's id, from WhatsApp Manager → API setup |
+| `WHATSAPP_APP_SECRET` | Meta app → Settings → Basic → App secret |
+| `WHATSAPP_VERIFY_TOKEN` | Any random string: `openssl rand -hex 16` |
+| `WHATSAPP_API_VERSION` | Optional; defaults to `v23.0` |
+| `WHATSAPP_TEMPLATE_LANGUAGE` | Optional; defaults to `en` |
+
+Going live:
+
+1. Meta Business verification, then a WhatsApp Business account and number.
+2. Submit the two templates in the design doc (`policy_due_reminder`,
+   `advisor_daily_summary`), category Utility, and wait for approval.
+3. Create a system user with `whatsapp_business_messaging` and generate a
+   permanent token.
+4. Add the four variables in Vercel (Production only) and redeploy.
+5. In the Meta app, register the webhook: callback
+   `https://<project>.vercel.app/api/whatsapp/webhook`, verify token as above;
+   subscribe to `messages`.
+6. Settings → WhatsApp → **Send me a test message** (Meta's own `hello_world`).
+7. Switch to **Test** for a few days: every message, clients' included, comes
+   to the advisor's own number; the reminders stay queued. Check them on the
+   Messages page.
+8. Switch to **Live**. **Off** stops sending at once, at any time.
+
+A reply of STOP switches that member's WhatsApp consent off by itself and is
+recorded in the consent history as the client's own withdrawal. Other replies
+appear on the Messages page for the advisor to answer from their phone.
 
 ### Secrets
 

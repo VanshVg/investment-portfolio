@@ -16,6 +16,18 @@ describe('updateSession', () => {
     expect(response.status).not.toBe(307)
   })
 
+  it('does not redirect Meta’s webhook calls, which carry a signature, not a session', async () => {
+    const request = new NextRequest('http://localhost/api/whatsapp/webhook', { method: 'POST' })
+    const response = await updateSession(request)
+    expect(response.status).not.toBe(307)
+  })
+
+  it('exempts only the webhook itself, not the rest of /api/whatsapp', async () => {
+    const request = new NextRequest('http://localhost/api/whatsapp/anything-else')
+    const response = await updateSession(request)
+    expect(response.status).toBe(307)
+  })
+
   it('still redirects an unauthenticated request to an ordinary private route', async () => {
     const request = new NextRequest('http://localhost/families')
     const response = await updateSession(request)
