@@ -27,7 +27,7 @@ describe('sanitizeParam', () => {
 describe('clientReminderParams', () => {
   const base = {
     memberName: 'Rajeshkumar Patel',
-    advisorName: 'Hiral Investmentwala',
+    advisorName: 'Test Advisor',
     holdingLabel: 'LIC Jeevan Anand',
     dueDate: '2027-03-15',
     amountDue: 12500,
@@ -36,7 +36,7 @@ describe('clientReminderParams', () => {
   it('fills the five variables in order, the date as DD-MM-YYYY and the amount in ₹', () => {
     expect(clientReminderParams(base)).toEqual([
       'Rajeshkumar Patel',
-      'Hiral Investmentwala',
+      'Test Advisor',
       'LIC Jeevan Anand',
       '15-03-2027',
       '₹12,500',
@@ -94,8 +94,8 @@ describe('advisorSummaryParams', () => {
 
 describe('optOutConfirmation', () => {
   it('names the advisor and says how to come back', () => {
-    expect(optOutConfirmation('Hiral Investmentwala')).toBe(
-      "You won't receive further reminders from Hiral Investmentwala. " +
+    expect(optOutConfirmation('Test Advisor')).toBe(
+      "You won't receive further reminders from Test Advisor. " +
         'Reply START if you change your mind.',
     )
   })

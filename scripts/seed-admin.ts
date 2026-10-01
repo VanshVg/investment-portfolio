@@ -5,6 +5,7 @@ config({ path: '.env.local', quiet: true })
 
 const email = process.env.SEED_ADMIN_EMAIL
 const password = process.env.SEED_ADMIN_PASSWORD
+const name = process.env.SEED_ADMIN_NAME || 'Advisor'
 
 if (!email || !password) {
   throw new Error('Set SEED_ADMIN_EMAIL and SEED_ADMIN_PASSWORD in .env.local')
@@ -25,7 +26,7 @@ const { error } = await admin.auth.admin.createUser({
   email,
   password,
   email_confirm: true,
-  user_metadata: { full_name: 'Hiral Investmentwala', role: 'admin' },
+  user_metadata: { full_name: name, role: 'admin' },
 })
 
 if (error) throw error

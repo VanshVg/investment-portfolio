@@ -107,7 +107,7 @@ Excel importer lands a batch of households at once.
 
 DPDP requires one: personal data may not be kept indefinitely once its purpose is
 served. Nothing in the schema, the code or the docs expresses how long a lapsed client's
-records are kept or what happens to them. This is a policy question first (Hiral decides
+records are kept or what happens to them. This is a policy question first (the advisor decides
 the period) and a scheduled job second.
 
 **More urgent since this milestone:** there is now a steady producer of exactly

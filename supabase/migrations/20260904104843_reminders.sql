@@ -73,7 +73,7 @@ create policy reminder_log_admin_all on public.reminder_log
   using ((select public.is_admin()))
   with check ((select public.is_admin()));
 
--- Starting cadence, pending Hiral's decision. Editable without a deploy.
+-- Starting cadence, pending the advisor's decision. Editable without a deploy.
 insert into public.reminder_rules (category, days_before)
 values
   ('life_insurance',    '{30,15}'),

@@ -148,8 +148,8 @@ function toRenewalRow(row: JoinedRow): RenewalRow {
 }
 
 /**
- * The renewal listing: every due date in a window, with the filters Hiral
- * works from. One indexed query rather than a union across categories — the
+ * The renewal listing: every due date in a window, with the filters the
+ * advisor works from. One indexed query rather than a union across categories — the
  * reason holdings is a single table.
  */
 export async function listRenewals(

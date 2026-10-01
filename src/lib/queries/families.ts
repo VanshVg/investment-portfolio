@@ -132,7 +132,7 @@ function toFamilySummary(row: Record<string, unknown>): FamilySummary {
     }[]
   ).filter((h) => h.deleted_at === null)
 
-  // Only reminding holdings can produce a due date Hiral will be chased about.
+  // Only reminding holdings can produce a due date the advisor will be chased about.
   const dueDates = holdings
     .filter((h) => h.reminders_enabled && h.next_due_date)
     .map((h) => h.next_due_date as string)

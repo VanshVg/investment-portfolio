@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
 import { purgeE2EHouseholds } from './cleanup'
 
-const EMAIL = process.env.SEED_ADMIN_EMAIL ?? 'hiral@example.test'
+const EMAIL = process.env.SEED_ADMIN_EMAIL ?? 'advisor@example.test'
 const PASSWORD = process.env.SEED_ADMIN_PASSWORD ?? ''
 
 // Unique per run, so a failed run never collides with the next one.
