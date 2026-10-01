@@ -3,6 +3,7 @@ import type { Database } from '@/lib/db/types.generated'
 import { differenceInCalendarDays } from 'date-fns'
 import type { DueFrequency } from '@/lib/domain/due-dates'
 import { fromISODate } from '@/lib/domain/dates'
+import { fetchPage } from './paging'
 
 export interface RenewalFilters {
   /** Inclusive ISO yyyy-mm-dd bounds. */
@@ -156,40 +157,44 @@ export async function listRenewals(
   filters: RenewalFilters,
   { maxRows = DEFAULT_MAX_ROWS }: { maxRows?: number } = {},
 ): Promise<RenewalListResult> {
-  const page = Math.max(1, filters.page ?? 1)
   const pageSize = Math.min(Math.max(1, filters.pageSize ?? 100), maxRows)
-  const offset = (page - 1) * pageSize
 
-  // Ties on a due date are the normal case, not an edge case: a household
-  // with four policies renewing in the same week produces them constantly.
-  // Ordering by date alone leaves the tiebreak to the planner, and an
-  // unstable order across pages means a row can appear twice or not at all.
-  let query = client
-    .from('due_instances')
-    .select(RENEWAL_ROW_SELECT, { count: 'exact' })
-    // Nothing soft-deleted is ever due (decision D2): not a deleted holding,
-    // nor anything in a deleted household.
-    .is('holdings.deleted_at', null)
-    .is('holdings.families.deleted_at', null)
-    .gte('due_date', filters.from)
-    .lte('due_date', filters.to)
-    .order('due_date', { ascending: true })
-    .order('id', { ascending: true })
-    .range(offset, offset + pageSize - 1)
+  function query(from: number, to: number) {
+    // Ties on a due date are the normal case, not an edge case: a household
+    // with four policies renewing in the same week produces them constantly.
+    // Ordering by date alone leaves the tiebreak to the planner, and an
+    // unstable order across pages means a row can appear twice or not at all.
+    let built = client
+      .from('due_instances')
+      .select(RENEWAL_ROW_SELECT, { count: 'exact' })
+      // Nothing soft-deleted is ever due (decision D2): not a deleted holding,
+      // nor anything in a deleted household.
+      .is('holdings.deleted_at', null)
+      .is('holdings.families.deleted_at', null)
+      .gte('due_date', filters.from)
+      .lte('due_date', filters.to)
+      .order('due_date', { ascending: true })
+      .order('id', { ascending: true })
+      .range(from, to)
 
-  if (filters.managedBy) query = query.eq('holdings.managed_by', filters.managedBy)
-  if (filters.memberId) query = query.eq('holdings.member_id', filters.memberId)
-  if (filters.familyId) query = query.eq('holdings.family_id', filters.familyId)
+    if (filters.managedBy) built = built.eq('holdings.managed_by', filters.managedBy)
+    if (filters.memberId) built = built.eq('holdings.member_id', filters.memberId)
+    if (filters.familyId) built = built.eq('holdings.family_id', filters.familyId)
+    return built
+  }
 
-  const { data, error, count } = await query
-  if (error) throw new Error(`renewal listing failed: ${error.message}`)
+  let result
+  try {
+    result = await fetchPage(query, filters.page ?? 1, pageSize)
+  } catch (cause) {
+    throw new Error(`renewal listing failed: ${(cause as Error).message}`)
+  }
 
-  const rows = (data ?? []).map((row) => toRenewalRow(row as JoinedRow))
-
+  const rows = result.rows.map((row) => toRenewalRow(row as JoinedRow))
   return {
     rows,
-    total: count ?? rows.length,
-    page,
+    total: result.total,
+    page: result.page,
     pageSize,
     truncated: rows.length >= maxRows,
   }
@@ -209,8 +214,12 @@ export interface OverdueFilters {
   familyId?: string
 }
 
-/** Overdue rows are a to-do list that should stay short; this is a backstop. */
-const DEFAULT_MAX_OVERDUE = 200
+/**
+ * Overdue rows are a to-do list that should stay short; this is a backstop,
+ * at PostgREST's own response cap. The page pages them in memory, since a
+ * filter runs after the query and the database's count would be wrong.
+ */
+const DEFAULT_MAX_OVERDUE = 1000
 
 /**
  * Every due date that has gone by unpaid, oldest first, whatever period the

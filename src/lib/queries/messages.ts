@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/db/types.generated'
 import type { SkipReason } from '@/lib/whatsapp/recheck'
+import { fetchPage, type Page } from './paging'
 
 type Client = SupabaseClient<Database>
 
@@ -49,7 +50,11 @@ const LOG_SELECT = `
   due_instances!inner ( due_date, holdings!inner ( label, families!inner ( id, name ) ) )`
 
 const RECENT_DAYS = 30
-const LIMIT = 200
+
+export interface PageRequest {
+  page: number
+  pageSize: number
+}
 
 function toMessageRow(row: Record<string, unknown>): MessageRow {
   const instance = row.due_instances as { due_date: string; holdings: Record<string, unknown> }
@@ -70,51 +75,85 @@ function toMessageRow(row: Record<string, unknown>): MessageRow {
   }
 }
 
+function toMessageRows(rows: unknown[]): MessageRow[] {
+  return (rows as Record<string, unknown>[]).map(toMessageRow)
+}
+
 function since(days: number): string {
   return new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString()
 }
 
 /** Messages that did not go out, most recent first: what the advisor may need to act on. */
-export async function listFailedMessages(client: Client): Promise<MessageRow[]> {
-  const { data, error } = await client
-    .from('reminder_log')
-    .select(LOG_SELECT)
-    .eq('status', 'failed')
-    .gte('created_at', since(RECENT_DAYS))
-    .order('created_at', { ascending: false })
-    .limit(LIMIT)
-  if (error) throw new Error(`listing failed messages failed: ${error.message}`)
-  return (data as unknown as Record<string, unknown>[]).map(toMessageRow)
+export async function listFailedMessages(
+  client: Client,
+  { page, pageSize }: PageRequest,
+): Promise<Page<MessageRow>> {
+  const from = since(RECENT_DAYS)
+  const result = await fetchPage(
+    (start, end) =>
+      client
+        .from('reminder_log')
+        .select(LOG_SELECT, { count: 'exact' })
+        .eq('status', 'failed')
+        .gte('created_at', from)
+        // The id breaks ties, so a row can neither repeat nor go missing across pages.
+        .order('created_at', { ascending: false })
+        .order('id', { ascending: true })
+        .range(start, end),
+    page,
+    pageSize,
+  )
+  return { ...result, rows: toMessageRows(result.rows) }
 }
 
 /**
  * The last month's reminders that were dealt with — sent, delivered, read or
  * skipped — plus Test-mode previews. Still-queued ones are not messages yet.
  */
-export async function listRecentMessages(client: Client): Promise<MessageRow[]> {
-  const { data, error } = await client
-    .from('reminder_log')
-    .select(LOG_SELECT)
-    .or('status.in.(sent,delivered,read,skipped),test_sent_at.not.is.null')
-    .neq('status', 'failed')
-    .gte('created_at', since(RECENT_DAYS))
-    .order('created_at', { ascending: false })
-    .limit(LIMIT)
-  if (error) throw new Error(`listing recent messages failed: ${error.message}`)
-  return (data as unknown as Record<string, unknown>[]).map(toMessageRow)
+export async function listRecentMessages(
+  client: Client,
+  { page, pageSize }: PageRequest,
+): Promise<Page<MessageRow>> {
+  const from = since(RECENT_DAYS)
+  const result = await fetchPage(
+    (start, end) =>
+      client
+        .from('reminder_log')
+        .select(LOG_SELECT, { count: 'exact' })
+        .or('status.in.(sent,delivered,read,skipped),test_sent_at.not.is.null')
+        .neq('status', 'failed')
+        .gte('created_at', from)
+        .order('created_at', { ascending: false })
+        .order('id', { ascending: true })
+        .range(start, end),
+    page,
+    pageSize,
+  )
+  return { ...result, rows: toMessageRows(result.rows) }
 }
 
 /** Clients' replies, the unhandled ones first, with who sent each when the number is known. */
-export async function listReplies(client: Client): Promise<ReplyRow[]> {
-  const { data, error } = await client
-    .from('whatsapp_inbound')
-    .select('id, from_mobile, body, received_at, opt_out, handled_at, member_ids')
-    .order('handled_at', { ascending: false, nullsFirst: true })
-    .order('received_at', { ascending: false })
-    .limit(LIMIT)
-  if (error) throw new Error(`listing replies failed: ${error.message}`)
+export async function listReplies(
+  client: Client,
+  { page, pageSize }: PageRequest,
+): Promise<Page<ReplyRow>> {
+  const result = await fetchPage(
+    (start, end) =>
+      client
+        .from('whatsapp_inbound')
+        .select('id, from_mobile, body, received_at, opt_out, handled_at, member_ids', {
+          count: 'exact',
+        })
+        .order('handled_at', { ascending: false, nullsFirst: true })
+        .order('received_at', { ascending: false })
+        .order('id', { ascending: true })
+        .range(start, end),
+    page,
+    pageSize,
+  )
+  const data = result.rows
 
-  const memberIds = [...new Set((data ?? []).flatMap((row) => row.member_ids))]
+  const memberIds = [...new Set(data.flatMap((row) => row.member_ids))]
   const { data: members, error: membersError } = memberIds.length
     ? await client
         .from('family_members')
@@ -129,7 +168,7 @@ export async function listReplies(client: Client): Promise<ReplyRow[]> {
     }),
   )
 
-  return (data ?? []).map((row) => ({
+  const rows = data.map((row) => ({
     id: row.id,
     from: row.from_mobile,
     body: row.body,
@@ -138,4 +177,5 @@ export async function listReplies(client: Client): Promise<ReplyRow[]> {
     handled: row.handled_at !== null,
     senders: row.member_ids.flatMap((id) => (byId.has(id) ? [byId.get(id)!] : [])),
   }))
+  return { ...result, rows }
 }
