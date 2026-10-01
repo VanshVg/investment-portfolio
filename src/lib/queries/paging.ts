@@ -40,8 +40,9 @@ interface RangeResult<Row> {
  * Runs a query for one page. `run` builds the query afresh for a row range
  * (`from`–`to`, inclusive) with `{ count: 'exact' }`.
  *
- * PostgREST refuses a range starting past the last row (416, PGRST103)
- * instead of returning an empty page. That happens whenever an address
+ * PostgREST refuses a range starting past the last row (416, PGRST103), and
+ * answers one starting exactly at the end with an empty page. That happens
+ * whenever an address
  * outlives the rows behind it — a bookmark, or the last row of the last page
  * deleted — and showing an error for it would be absurd: the last page that
  * exists is served instead.
@@ -54,7 +55,12 @@ export async function fetchPage<Row>(
   let page = Math.max(1, requested)
   let result = await run((page - 1) * pageSize, page * pageSize - 1)
 
-  if (result.error?.code === 'PGRST103') {
+  // Past the end: an offset beyond the last row is an error, and one exactly
+  // at the end an empty page. Either way the count says where the end is.
+  const pastEnd =
+    result.error?.code === 'PGRST103' ||
+    (!result.error && page > 1 && (result.data?.length ?? 0) === 0)
+  if (pastEnd) {
     const first = await run(0, pageSize - 1)
     if (first.error) throw new Error(first.error.message)
     page = lastPage(first.count ?? 0, pageSize)

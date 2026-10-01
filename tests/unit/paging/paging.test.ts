@@ -31,7 +31,7 @@ describe('fetchPage', () => {
   /** A stand-in for a PostgREST query over `total` rows, honouring its range rules. */
   function table(total: number) {
     return vi.fn(async (from: number, to: number) => {
-      if (from > 0 && from >= total) {
+      if (from > total) {
         return { data: null, count: null, error: { code: 'PGRST103', message: 'Range' } }
       }
       const length = Math.max(0, Math.min(to, total - 1) - from + 1)
@@ -52,6 +52,17 @@ describe('fetchPage', () => {
     const result = await fetchPage(table(120), 9, 50)
     expect(result).toMatchObject({ total: 120, page: 3 })
     expect(result.rows).toEqual(Array.from({ length: 20 }, (_, i) => 100 + i))
+  })
+
+  it('serves the last page when the page asked for starts exactly at the end', async () => {
+    // PostgREST answers an offset equal to the row count with an empty page,
+    // not an error; it is the same situation and gets the same answer.
+    const result = await fetchPage(table(4), 3, 2)
+    expect(result).toMatchObject({ total: 4, page: 2, rows: [2, 3] })
+  })
+
+  it('is page 1 of nothing when there are no rows at all', async () => {
+    expect(await fetchPage(table(0), 1, 50)).toEqual({ rows: [], total: 0, page: 1, pageSize: 50 })
   })
 
   it('serves page 1 when everything fits on it', async () => {

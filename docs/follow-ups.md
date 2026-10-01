@@ -70,7 +70,16 @@ the refresh of untouched future instances.
 
 ---
 
-## T1. Full pagination for `listFamilies` and `listRenewals`
+## T1. Full pagination for `listFamilies` and `listRenewals` — resolved
+
+**Resolved:** the families page pages through `listFamiliesPage` (50 a page,
+working with the search), and every long list — renewals, overdue, and the
+three Messages sections — uses the shared `fetchPage` / `Pagination` pair in
+`src/lib/queries/paging.ts` and `src/components/ui/Pagination.tsx`. A page
+number past the end serves the last page instead of failing. `listFamilies`
+keeps its unpaged form, with the `truncated` guard, for the renewals family
+picker.
+
 
 **`listRenewals` is done.** The Milestone 3 renewals page gave it real offset
 pagination — `page`/`pageSize`, an exact count, ordering by `(due_date, id)` so

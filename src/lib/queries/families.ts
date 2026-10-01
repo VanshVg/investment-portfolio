@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/db/types.generated'
 import type { HoldingCategory } from '@/lib/validation/holdings'
 import type { DueFrequency } from '@/lib/domain/due-dates'
+import { fetchPage, type Page } from './paging'
 
 // Re-exported rather than redeclared: HoldingCategory is derived from the Zod
 // detail schemas (keyof typeof holdingDetailSchemas) and DueFrequency from the
@@ -96,63 +97,86 @@ function sanitiseSearch(term: string): string {
 
 const num = (v: unknown): number | null => (v === null || v === undefined ? null : Number(v))
 
-export async function listFamilies(
-  client: SupabaseClient<Database>,
-  { search, maxRows = DEFAULT_MAX_ROWS }: { search?: string; maxRows?: number } = {},
-): Promise<FamilyListResult> {
+const FAMILY_SUMMARY_SELECT =
+  'id, name, head_name, head_mobile, family_members(deleted_at), holdings(next_due_date, reminders_enabled, deleted_at)'
+
+/** Soft-deleted households are hidden everywhere (decision D2); a search narrows the rest. */
+function familySummaries(client: SupabaseClient<Database>, search: string | undefined) {
   let query = client
     .from('families')
-    .select(
-      'id, name, head_name, head_mobile, family_members(deleted_at), holdings(next_due_date, reminders_enabled, deleted_at)',
-      { count: 'exact' },
-    )
-    // Soft-deleted households are hidden everywhere (decision D2).
+    .select(FAMILY_SUMMARY_SELECT, { count: 'exact' })
     .is('deleted_at', null)
+    // The id breaks ties between households of the same name, so paging is
+    // stable: a row can neither repeat nor go missing between pages.
     .order('name', { ascending: true })
-    .range(0, maxRows - 1)
+    .order('id', { ascending: true })
 
   const term = sanitiseSearch(search ?? '')
   if (term) {
     query = query.or(`name.ilike.%${term}%,head_name.ilike.%${term}%,head_mobile.ilike.%${term}%`)
   }
+  return query
+}
 
-  const { data, error, count } = await query
+function toFamilySummary(row: Record<string, unknown>): FamilySummary {
+  // Counted here rather than with an embedded count(), so a removed member
+  // or deleted holding does not inflate the figures on the list.
+  const members = ((row.family_members ?? []) as { deleted_at: string | null }[]).filter(
+    (m) => m.deleted_at === null,
+  )
+  const holdings = (
+    (row.holdings ?? []) as {
+      next_due_date: string | null
+      reminders_enabled: boolean
+      deleted_at: string | null
+    }[]
+  ).filter((h) => h.deleted_at === null)
+
+  // Only reminding holdings can produce a due date Hiral will be chased about.
+  const dueDates = holdings
+    .filter((h) => h.reminders_enabled && h.next_due_date)
+    .map((h) => h.next_due_date as string)
+    .sort()
+
+  return {
+    id: row.id as string,
+    name: row.name as string,
+    headName: (row.head_name as string) ?? null,
+    headMobile: (row.head_mobile as string) ?? null,
+    memberCount: members.length,
+    holdingCount: holdings.length,
+    nextDueDate: dueDates[0] ?? null,
+  }
+}
+
+/**
+ * Every household, for pickers such as the renewals page's family filter.
+ * The families page itself pages through them with `listFamiliesPage`.
+ */
+export async function listFamilies(
+  client: SupabaseClient<Database>,
+  { search, maxRows = DEFAULT_MAX_ROWS }: { search?: string; maxRows?: number } = {},
+): Promise<FamilyListResult> {
+  const { data, error, count } = await familySummaries(client, search).range(0, maxRows - 1)
   if (error) throw new Error(`family listing failed: ${error.message}`)
-
-  type Row = Record<string, unknown>
-
-  const families = (data ?? []).map((row: Row) => {
-    // Counted here rather than with an embedded count(), so a removed member
-    // or deleted holding does not inflate the figures on the list.
-    const members = ((row.family_members ?? []) as { deleted_at: string | null }[]).filter(
-      (m) => m.deleted_at === null,
-    )
-    const holdings = (
-      (row.holdings ?? []) as {
-        next_due_date: string | null
-        reminders_enabled: boolean
-        deleted_at: string | null
-      }[]
-    ).filter((h) => h.deleted_at === null)
-
-    // Only reminding holdings can produce a due date Hiral will be chased about.
-    const dueDates = holdings
-      .filter((h) => h.reminders_enabled && h.next_due_date)
-      .map((h) => h.next_due_date as string)
-      .sort()
-
-    return {
-      id: row.id as string,
-      name: row.name as string,
-      headName: (row.head_name as string) ?? null,
-      headMobile: (row.head_mobile as string) ?? null,
-      memberCount: members.length,
-      holdingCount: holdings.length,
-      nextDueDate: dueDates[0] ?? null,
-    }
-  })
-
+  const families = (data ?? []).map((row) => toFamilySummary(row as Record<string, unknown>))
   return { families, truncated: typeof count === 'number' && count > families.length }
+}
+
+/** One page of the families list, optionally narrowed by a search. */
+export async function listFamiliesPage(
+  client: SupabaseClient<Database>,
+  { search, page, pageSize }: { search?: string; page: number; pageSize: number },
+): Promise<Page<FamilySummary>> {
+  const result = await fetchPage(
+    (from, to) => familySummaries(client, search).range(from, to),
+    page,
+    pageSize,
+  )
+  return {
+    ...result,
+    rows: result.rows.map((row) => toFamilySummary(row as Record<string, unknown>)),
+  }
 }
 
 export async function getFamily(

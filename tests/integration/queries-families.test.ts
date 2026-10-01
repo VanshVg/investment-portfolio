@@ -1,6 +1,12 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { adminClient, ensureUser, signedInClient } from '../helpers/db'
-import { getFamily, listFamilies, listHoldings, listMembers } from '@/lib/queries/families'
+import {
+  getFamily,
+  listFamilies,
+  listFamiliesPage,
+  listHoldings,
+  listMembers,
+} from '@/lib/queries/families'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/db/types.generated'
 
@@ -182,5 +188,54 @@ describe('family queries', () => {
       expect(families.length).toBe(1)
       expect(truncated).toBe(true)
     })
+  })
+})
+
+describe('listFamiliesPage', () => {
+  const PREFIX = 'PagingProbe'
+  let probeIds: string[] = []
+
+  beforeAll(async () => {
+    const user = await ensureUser(EMAIL, PASSWORD, 'admin')
+    const pagingClient = (await signedInClient(EMAIL, PASSWORD)) as SupabaseClient<Database>
+    const { data, error } = await adminClient()
+      .from('families')
+      .insert(
+        ['E', 'B', 'D', 'A', 'C'].map((letter) => ({
+          name: `${PREFIX} ${letter}`,
+          owner_advisor_id: user!.id,
+        })),
+      )
+      .select('id')
+    if (error) throw new Error(error.message)
+    probeIds = data!.map((row) => row.id)
+    client = pagingClient
+  })
+
+  afterAll(async () => {
+    await adminClient().from('families').delete().in('id', probeIds)
+  })
+
+  it('returns one page of the search, in name order, with the total', async () => {
+    const first = await listFamiliesPage(client, { search: PREFIX, page: 1, pageSize: 2 })
+    expect(first).toMatchObject({ total: 5, page: 1, pageSize: 2 })
+    expect(first.rows.map((family) => family.name)).toEqual([`${PREFIX} A`, `${PREFIX} B`])
+
+    const third = await listFamiliesPage(client, { search: PREFIX, page: 3, pageSize: 2 })
+    expect(third.rows.map((family) => family.name)).toEqual([`${PREFIX} E`])
+  })
+
+  it('serves the last page for a page past the end', async () => {
+    const result = await listFamiliesPage(client, { search: PREFIX, page: 40, pageSize: 2 })
+    expect(result.page).toBe(3)
+    expect(result.rows.map((family) => family.name)).toEqual([`${PREFIX} E`])
+  })
+
+  it('summarises each family the same way as the full list', async () => {
+    const [paged, full] = await Promise.all([
+      listFamiliesPage(client, { search: PREFIX, page: 1, pageSize: 5 }),
+      listFamilies(client, { search: PREFIX }),
+    ])
+    expect(paged.rows).toEqual(full.families)
   })
 })
