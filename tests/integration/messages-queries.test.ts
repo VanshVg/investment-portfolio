@@ -102,7 +102,7 @@ afterAll(async () => {
 
 describe('Messages page queries', () => {
   it('lists failures with the household, the policy and Meta’s reason', async () => {
-    const rows = await listFailedMessages(client)
+    const { rows } = await listFailedMessages(client, { page: 1, pageSize: 200 })
     expect(rows.find((row) => row.id === ids.failed)).toMatchObject({
       familyId,
       familyName: 'Messages page fixture',
@@ -114,7 +114,7 @@ describe('Messages page queries', () => {
   })
 
   it('lists recent sends, skips with their reason, and test previews, not the queue', async () => {
-    const rows = await listRecentMessages(client)
+    const { rows } = await listRecentMessages(client, { page: 1, pageSize: 200 })
     const mine = new Map(rows.map((row) => [row.id, row]))
     expect(mine.get(ids.sent)).toMatchObject({ status: 'sent', test: false })
     expect(mine.get(ids.skipped)).toMatchObject({
@@ -126,7 +126,8 @@ describe('Messages page queries', () => {
   })
 
   it('lists replies unhandled first, naming the member and household it matches', async () => {
-    const rows = (await listReplies(client)).filter((row) =>
+    const { rows: all } = await listReplies(client, { page: 1, pageSize: 200 })
+    const rows = all.filter((row) =>
       [ids.question, ids.optout, ids.stranger, ids.done].includes(row.id),
     )
     expect(rows.at(-1)!.id).toBe(ids.done)
@@ -139,6 +140,35 @@ describe('Messages page queries', () => {
     })
     expect(rows.find((row) => row.id === ids.optout)).toMatchObject({ optOut: true })
     expect(rows.find((row) => row.id === ids.stranger)).toMatchObject({ senders: [] })
+  })
+})
+
+describe('Messages page paging', () => {
+  // Other suites write messages in parallel, so totals are not asserted
+  // exactly; what must hold is that pages are disjoint and complete.
+  it.each([
+    ['failed', listFailedMessages],
+    ['recent', listRecentMessages],
+    ['replies', listReplies],
+  ] as const)('pages the %s list without repeating or losing a row', async (_, list) => {
+    const first = await list(client, { page: 1, pageSize: 1 })
+    expect(first.rows).toHaveLength(1)
+    expect(first).toMatchObject({ page: 1, pageSize: 1 })
+    expect(first.total).toBeGreaterThanOrEqual(1)
+
+    const everything = await list(client, { page: 1, pageSize: 1000 })
+    const second = await list(client, { page: 2, pageSize: 1 })
+    if (everything.total > 1) {
+      expect(second.rows[0].id).toBe(everything.rows[1].id)
+      expect(second.rows[0].id).not.toBe(first.rows[0].id)
+    }
+  })
+
+  it('serves the last page for a page past the end', async () => {
+    const { total } = await listReplies(client, { page: 1, pageSize: 1000 })
+    const result = await listReplies(client, { page: 100_000, pageSize: 2 })
+    expect(result.page).toBe(Math.max(1, Math.ceil(total / 2)))
+    expect(result.rows.length).toBeGreaterThan(0)
   })
 })
 
