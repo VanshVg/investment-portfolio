@@ -113,6 +113,23 @@ script deletes and recreates a household. It refuses to run unless
 
 - Vercel → Settings → Cron Jobs lists `/api/cron/reminders`.
 
+## Branches and deploying
+
+`main` is what is live: every push to it deploys to production. Nothing else
+deploys — `vercel.json` turns automatic deployments off for every other branch
+(`git.deploymentEnabled`), since the environment variables are set for
+Production only and a preview built without them would be broken.
+
+Work goes through `develop`, which collects finished changes until it is time
+to deploy them:
+
+1. Branch from `develop` for each change; merge it back into `develop` with
+   `--no-ff` once its tests pass. Pushing `develop` keeps it safe on GitHub and
+   deploys nothing.
+2. To deploy, apply any new migrations to the hosted database first
+   (`npx supabase db push`; see [Schema changes](#schema-changes)), then merge
+   `develop` into `main` with `--no-ff` and push `main`.
+
 ## Operating
 
 ### Backups
