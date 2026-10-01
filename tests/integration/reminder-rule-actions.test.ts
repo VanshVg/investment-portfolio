@@ -192,7 +192,7 @@ describe('updateAdvisorMobile', () => {
 
     // Both fixture profiles start from a known state so assertions below
     // don't depend on whatever a previous local run left behind. Neither
-    // email is the seeded "Hiral Investmentwala" profile or one another
+    // email is the seeded advisor profile or one another
     // suite shares.
     await admin.from('profiles').update({ mobile: null }).eq('id', advisorId)
     await admin.from('profiles').update({ mobile: null }).eq('id', otherId)

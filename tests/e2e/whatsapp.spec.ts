@@ -2,7 +2,7 @@ import { expect, test, type Page } from '@playwright/test'
 import { adminClient } from '../helpers/db'
 import { purgeE2EHouseholds } from './cleanup'
 
-const EMAIL = process.env.SEED_ADMIN_EMAIL ?? 'hiral@example.test'
+const EMAIL = process.env.SEED_ADMIN_EMAIL ?? 'advisor@example.test'
 const PASSWORD = process.env.SEED_ADMIN_PASSWORD ?? ''
 const FAMILY = `E2E WhatsApp ${Date.now()}`
 const REPLY_ID = `wamid.e2e-${Date.now()}`

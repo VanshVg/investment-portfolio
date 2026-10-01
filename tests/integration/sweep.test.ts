@@ -140,12 +140,12 @@ afterAll(async () => {
 
 describe('runReminderSweep', () => {
   beforeAll(async () => {
-    // Every seeded profile (including Hiral's) currently has a null mobile.
+    // Every seeded profile (including the seeded advisor's) currently has a null mobile.
     // reminderRecipients takes the advisor's number from profiles.mobile, so
     // a fixture that relied on a shared profile would produce zero advisor
     // recipients and the routing assertions below would pass for the wrong
     // reason. This suite creates and owns its own advisor instead, and sets
-    // its mobile — never the seeded Hiral profile, never a profile another
+    // its mobile — never the seeded advisor profile, never a profile another
     // suite might share.
     const advisor = await ensureUser(ADVISOR_EMAIL, PASSWORD, 'admin')
     advisorId = advisor!.id
