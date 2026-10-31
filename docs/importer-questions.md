@@ -37,7 +37,9 @@ are already past their term.** Before trusting that:
 
 - Is the **term** column the policy term, or the premium-paying term? On
   whole-life plans the two differ, and several hundred rows are on plans where
-  that distinction matters.
+  that distinction matters. **Partly answered:** his review asked for both to be
+  recorded separately, so the distinction is real to him — what is still needed
+  is which of the two the sheet's single column holds.
 - 143 policies are marked single-premium. Are those finished, or still live
   investments he wants reminders about?
 - Nine rows have "maturity" or "maturity paid" typed into the mode column. Is
@@ -101,8 +103,11 @@ Still undecided, and needed before the first reminder goes out.
   those 33 policies have to be skipped.
 - Five rows are marked **WC** and four **PA**. Should workmen's compensation and
   personal accident be filed as health, as vehicle, or as their own kind?
-- Vehicle policies name the vehicle; **health policies name nothing**. What
-  should a health policy be labelled by — the person covered?
+- ~~Vehicle policies name the vehicle; **health policies name nothing**. What
+  should a health policy be labelled by?~~ **Answered in his review:** the
+  insured-asset field is being removed from health altogether, and health
+  policies gain individual / multi-individual / floater with the people covered
+  named instead. The 53 health rows stop being a problem.
 - **55 rows link the policy PDF on Google Drive.** Should the tool keep those
   links, so a policy opens its own document?
 - 26 rows have no end date, so no renewal can be scheduled. Can he fill them?
