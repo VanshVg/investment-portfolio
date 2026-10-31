@@ -6,6 +6,8 @@ import { horizonFrom } from '@/lib/reminders/horizon'
 import { runReminderSweep, type SweepResult } from '@/lib/reminders/sweep'
 import { listLiveHoldingIds } from '@/lib/reminders/live-holdings'
 import { todayInIndia } from '@/lib/domain/dates'
+import { sendQueuedWhatsApp } from '@/lib/whatsapp/daily'
+import type { SenderResult } from '@/lib/whatsapp/send'
 
 // The sweep walks every holding; it must not be served from a cache.
 export const dynamic = 'force-dynamic'
@@ -80,7 +82,17 @@ export async function GET(request: Request): Promise<Response> {
     return Response.json({ generated, removed, sweep: null }, { status: 500 })
   }
 
+  // After the sweep, so a reminder queued this morning goes out this morning.
+  // Its own failure does not undo the sweep's: that work is done and saved.
+  let whatsapp: SenderResult | null
+  try {
+    whatsapp = await sendQueuedWhatsApp(supabase, today)
+  } catch (cause) {
+    console.error('whatsapp send failed', cause instanceof Error ? cause.message : cause)
+    whatsapp = null
+  }
+
   // Counts only. This response must never carry client data: the caller is a
   // scheduler, and the client that produced these numbers ignores RLS.
-  return Response.json({ generated, removed, sweep })
+  return Response.json({ generated, removed, sweep, whatsapp })
 }

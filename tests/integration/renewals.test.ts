@@ -355,15 +355,18 @@ describe('renewal listing', () => {
       expect(page2.rows.map((r) => r.dueDate)).toEqual(['2029-03-10', '2029-03-11'])
     })
 
-    it('returns an empty page past the end of the result set, with total unchanged', async () => {
+    // An address can outlive its rows (a bookmark, or the last row of the last
+    // page paid and filtered away): the last page that exists is served.
+    it.each([3, 50])('serves the last page for page %i, past the end', async (page) => {
       const result = await listRenewals(client, {
         from: PAGE_FROM,
         to: PAGE_TO,
         familyId: fixtureFamilyId,
-        page: 3,
+        page,
         pageSize: 2,
       })
-      expect(result.rows).toEqual([])
+      expect(result.page).toBe(2)
+      expect(result.rows.map((r) => r.dueInstanceId)).toEqual([highestTiedId, laterDateInstanceId])
       expect(result.total).toBe(4)
     })
 

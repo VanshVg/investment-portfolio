@@ -9,6 +9,7 @@ import { usePathname } from 'next/navigation'
 const NAV_ITEMS: { href: string; label: string }[] = [
   { href: '/families', label: 'Families' },
   { href: '/renewals', label: 'Renewals' },
+  { href: '/messages', label: 'Messages' },
   { href: '/settings/reminders', label: 'Settings' },
 ]
 

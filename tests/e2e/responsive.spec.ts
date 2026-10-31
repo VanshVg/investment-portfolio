@@ -1,7 +1,7 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { purgeE2EHouseholds } from './cleanup'
 
-const EMAIL = process.env.SEED_ADMIN_EMAIL ?? 'hiral@example.test'
+const EMAIL = process.env.SEED_ADMIN_EMAIL ?? 'advisor@example.test'
 const PASSWORD = process.env.SEED_ADMIN_PASSWORD ?? ''
 
 const FAMILY = `E2E Responsive ${Date.now()}`
@@ -73,7 +73,7 @@ test('no page is wider than a phone screen', async ({ page }) => {
   await expectOnScreen(page, lifeInsurance.getByRole('button', { name: 'Save' }))
   await lifeInsurance.getByRole('button', { name: 'Cancel' }).click()
 
-  for (const path of ['/renewals', '/settings/reminders']) {
+  for (const path of ['/renewals', '/messages', '/settings/reminders']) {
     await page.goto(path)
     await expectNoSidewaysScroll(page)
   }

@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 
-const EMAIL = process.env.SEED_ADMIN_EMAIL ?? 'hiral@example.test'
+const EMAIL = process.env.SEED_ADMIN_EMAIL ?? 'advisor@example.test'
 const PASSWORD = process.env.SEED_ADMIN_PASSWORD ?? ''
 
 test('redirects an anonymous visitor to the login page', async ({ page }) => {

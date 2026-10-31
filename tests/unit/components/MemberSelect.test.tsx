@@ -17,7 +17,7 @@ function makeMember(id: string, name: string): Member {
   }
 }
 
-const members: Member[] = [makeMember('m1', 'Hiral'), makeMember('m2', 'Meera')]
+const members: Member[] = [makeMember('m1', 'Priya'), makeMember('m2', 'Meera')]
 
 describe('MemberSelect', () => {
   it('emits the chosen member id, or null for the whole family', () => {
@@ -54,25 +54,25 @@ describe('MemberSelect', () => {
   })
   describe('removed members (decision D2)', () => {
     const everyone: Member[] = [
-      makeMember('m1', 'Hiral'),
+      makeMember('m1', 'Priya'),
       { ...makeMember('m2', 'Aarav'), removed: true },
     ]
     const options = () => screen.getAllByRole('option').map((o) => o.textContent)
 
     it('does not offer a removed member for a new assignment', () => {
       render(<MemberSelect id="member" label="Member" members={everyone} value={null} onChange={() => {}} />)
-      expect(options()).toEqual(['Whole family', 'Hiral'])
+      expect(options()).toEqual(['Whole family', 'Priya'])
     })
 
     it('keeps a removed member on a holding already theirs, marked as removed', () => {
       render(<MemberSelect id="member" label="Member" members={everyone} value="m2" onChange={() => {}} />)
-      expect(options()).toEqual(['Whole family', 'Hiral', 'Aarav (removed)'])
+      expect(options()).toEqual(['Whole family', 'Priya', 'Aarav (removed)'])
       expect(screen.getByLabelText('Member')).toHaveValue('m2')
     })
 
     it('names a removed member as removed, and no member as the whole family', () => {
       expect(memberName(everyone, 'm2')).toBe('Aarav (removed)')
-      expect(memberName(everyone, 'm1')).toBe('Hiral')
+      expect(memberName(everyone, 'm1')).toBe('Priya')
       expect(memberName(everyone, null)).toBe('Whole family')
     })
   })

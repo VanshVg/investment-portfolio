@@ -34,6 +34,35 @@ export type Database = {
   }
   public: {
     Tables: {
+      app_settings: {
+        Row: {
+          id: boolean
+          updated_at: string
+          updated_by: string | null
+          whatsapp_mode: Database["public"]["Enums"]["whatsapp_mode"]
+        }
+        Insert: {
+          id?: boolean
+          updated_at?: string
+          updated_by?: string | null
+          whatsapp_mode?: Database["public"]["Enums"]["whatsapp_mode"]
+        }
+        Update: {
+          id?: boolean
+          updated_at?: string
+          updated_by?: string | null
+          whatsapp_mode?: Database["public"]["Enums"]["whatsapp_mode"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "app_settings_updated_by_fkey"
+            columns: ["updated_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       consent_events: {
         Row: {
           event: Database["public"]["Enums"]["consent_event"]
@@ -42,6 +71,7 @@ export type Database = {
           mobile: string | null
           recorded_at: string
           recorded_by: string | null
+          source: Database["public"]["Enums"]["consent_source"]
         }
         Insert: {
           event: Database["public"]["Enums"]["consent_event"]
@@ -50,6 +80,7 @@ export type Database = {
           mobile?: string | null
           recorded_at?: string
           recorded_by?: string | null
+          source?: Database["public"]["Enums"]["consent_source"]
         }
         Update: {
           event?: Database["public"]["Enums"]["consent_event"]
@@ -58,6 +89,7 @@ export type Database = {
           mobile?: string | null
           recorded_at?: string
           recorded_by?: string | null
+          source?: Database["public"]["Enums"]["consent_source"]
         }
         Relationships: [
           {
@@ -324,43 +356,64 @@ export type Database = {
       }
       reminder_log: {
         Row: {
+          attempts: number
           channel: Database["public"]["Enums"]["reminder_channel"]
+          claimed_at: string | null
           created_at: string
           days_before: number
+          delivered_at: string | null
           due_instance_id: string
           error: string | null
           id: string
           provider_message_id: string | null
+          read_at: string | null
           recipient_mobile: string
           recipient_type: Database["public"]["Enums"]["reminder_recipient_type"]
           sent_at: string | null
+          skip_reason: string | null
           status: Database["public"]["Enums"]["reminder_status"]
+          summary_message_id: string | null
+          test_sent_at: string | null
         }
         Insert: {
+          attempts?: number
           channel?: Database["public"]["Enums"]["reminder_channel"]
+          claimed_at?: string | null
           created_at?: string
           days_before: number
+          delivered_at?: string | null
           due_instance_id: string
           error?: string | null
           id?: string
           provider_message_id?: string | null
+          read_at?: string | null
           recipient_mobile: string
           recipient_type: Database["public"]["Enums"]["reminder_recipient_type"]
           sent_at?: string | null
+          skip_reason?: string | null
           status?: Database["public"]["Enums"]["reminder_status"]
+          summary_message_id?: string | null
+          test_sent_at?: string | null
         }
         Update: {
+          attempts?: number
           channel?: Database["public"]["Enums"]["reminder_channel"]
+          claimed_at?: string | null
           created_at?: string
           days_before?: number
+          delivered_at?: string | null
           due_instance_id?: string
           error?: string | null
           id?: string
           provider_message_id?: string | null
+          read_at?: string | null
           recipient_mobile?: string
           recipient_type?: Database["public"]["Enums"]["reminder_recipient_type"]
           sent_at?: string | null
+          skip_reason?: string | null
           status?: Database["public"]["Enums"]["reminder_status"]
+          summary_message_id?: string | null
+          test_sent_at?: string | null
         }
         Relationships: [
           {
@@ -413,15 +466,64 @@ export type Database = {
           },
         ]
       }
+      whatsapp_inbound: {
+        Row: {
+          body: string
+          from_mobile: string
+          handled_at: string | null
+          handled_by: string | null
+          id: string
+          member_ids: string[]
+          opt_out: boolean
+          provider_message_id: string
+          received_at: string
+        }
+        Insert: {
+          body: string
+          from_mobile: string
+          handled_at?: string | null
+          handled_by?: string | null
+          id?: string
+          member_ids?: string[]
+          opt_out?: boolean
+          provider_message_id: string
+          received_at?: string
+        }
+        Update: {
+          body?: string
+          from_mobile?: string
+          handled_at?: string | null
+          handled_by?: string | null
+          id?: string
+          member_ids?: string[]
+          opt_out?: boolean
+          provider_message_id?: string
+          received_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "whatsapp_inbound_handled_by_fkey"
+            columns: ["handled_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
       is_admin: { Args: never; Returns: boolean }
+      withdraw_consent_by_reply: {
+        Args: { p_mobile: string }
+        Returns: string[]
+      }
     }
     Enums: {
       consent_event: "given" | "withdrawn" | "mobile_changed"
+      consent_source: "advisor" | "client_reply"
       due_frequency:
         | "annual"
         | "half_yearly"
@@ -445,8 +547,16 @@ export type Database = {
       payment_status: "paid" | "unpaid" | "unknown"
       reminder_channel: "whatsapp"
       reminder_recipient_type: "advisor" | "client"
-      reminder_status: "pending" | "sent" | "failed" | "skipped"
+      reminder_status:
+        | "pending"
+        | "sent"
+        | "failed"
+        | "skipped"
+        | "sending"
+        | "delivered"
+        | "read"
       user_role: "admin" | "staff" | "client"
+      whatsapp_mode: "off" | "test" | "live"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -578,6 +688,7 @@ export const Constants = {
   public: {
     Enums: {
       consent_event: ["given", "withdrawn", "mobile_changed"],
+      consent_source: ["advisor", "client_reply"],
       due_frequency: [
         "annual",
         "half_yearly",
@@ -604,8 +715,17 @@ export const Constants = {
       payment_status: ["paid", "unpaid", "unknown"],
       reminder_channel: ["whatsapp"],
       reminder_recipient_type: ["advisor", "client"],
-      reminder_status: ["pending", "sent", "failed", "skipped"],
+      reminder_status: [
+        "pending",
+        "sent",
+        "failed",
+        "skipped",
+        "sending",
+        "delivered",
+        "read",
+      ],
       user_role: ["admin", "staff", "client"],
+      whatsapp_mode: ["off", "test", "live"],
     },
   },
 } as const

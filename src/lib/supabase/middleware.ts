@@ -17,6 +17,12 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.next({ request })
   }
 
+  // Meta's webhook calls carry no session either; the route itself rejects
+  // anything not signed with the app secret. Only this exact path is exempt.
+  if (request.nextUrl.pathname === '/api/whatsapp/webhook') {
+    return NextResponse.next({ request })
+  }
+
   let response = NextResponse.next({ request })
 
   const supabase = createServerClient(

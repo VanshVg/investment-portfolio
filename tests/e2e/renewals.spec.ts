@@ -2,7 +2,7 @@ import { addDays, addMonths } from 'date-fns'
 import { expect, test, type Page } from '@playwright/test'
 import { purgeE2EHouseholds } from './cleanup'
 
-const EMAIL = process.env.SEED_ADMIN_EMAIL ?? 'hiral@example.test'
+const EMAIL = process.env.SEED_ADMIN_EMAIL ?? 'advisor@example.test'
 const PASSWORD = process.env.SEED_ADMIN_PASSWORD ?? ''
 
 async function signIn(page: Page) {

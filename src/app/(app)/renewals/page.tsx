@@ -1,26 +1,18 @@
-import Link from 'next/link'
 import { createServerSupabase } from '@/lib/supabase/server'
 import { listOverdue, listRenewals } from '@/lib/queries/renewals'
+import { pageHref, paginate, parsePage } from '@/lib/queries/paging'
 import { todayInIndia } from '@/lib/domain/dates'
 import { PageHeader } from '@/components/ui/PageHeader'
-import { SECTION_LEAD, SECTION_TITLE, TEXT_LINK } from '@/components/ui/styles'
+import { Pagination } from '@/components/ui/Pagination'
+import { SECTION_LEAD, SECTION_TITLE } from '@/components/ui/styles'
 import { listFamilies, listMembers } from '@/lib/queries/families'
 import { RenewalFilters } from './_components/RenewalFilters'
 import { parseRenewalParams } from './_components/renewal-params'
 import { RenewalTable } from './_components/RenewalTable'
 import { markRenewed, setPaymentStatus } from './actions'
 
-/** Builds a page link that preserves every other search param — a filter that
- * resets when the advisor pages through results is worse than no paging at
- * all, so this clones the raw params rather than the parsed filter object. */
-function pageHref(rawParams: Record<string, string | undefined>, page: number): string {
-  const params = new URLSearchParams()
-  for (const [key, value] of Object.entries(rawParams)) {
-    if (value) params.set(key, value)
-  }
-  params.set('page', String(page))
-  return `/renewals?${params.toString()}`
-}
+const PERIOD_PAGE_SIZE = 50
+const OVERDUE_PAGE_SIZE = 25
 
 export default async function RenewalsPage({
   searchParams,
@@ -33,7 +25,7 @@ export default async function RenewalsPage({
   const today = todayInIndia()
 
   const [result, overdue, { families }, members] = await Promise.all([
-    listRenewals(supabase, filters),
+    listRenewals(supabase, { ...filters, pageSize: PERIOD_PAGE_SIZE }),
     // Everything late from before the period on screen. Bounded by the
     // earlier of today and the period's start, so a past date the advisor
     // has already pulled into the period is shown once, in the table below.
@@ -48,9 +40,13 @@ export default async function RenewalsPage({
     filters.familyId ? listMembers(supabase, filters.familyId) : Promise.resolve([]),
   ])
 
-  const totalPages = Math.max(1, Math.ceil(result.total / result.pageSize))
-  const rangeStart = result.total === 0 ? 0 : (result.page - 1) * result.pageSize + 1
-  const rangeEnd = Math.min(result.page * result.pageSize, result.total)
+  // Overdue is filtered after the query (periods renewed past drop out), so
+  // it is paged here, from the rows already fetched.
+  const overduePage = paginate(overdue.rows, parsePage(rawParams.overduePage), OVERDUE_PAGE_SIZE)
+  // Page links keep every filter and the other section's page: the raw
+  // params are cloned, not the parsed filter object.
+  const href = (key: string, anchor: string) => (page: number) =>
+    pageHref('/renewals', rawParams, key, page, anchor)
 
   return (
     <div>
@@ -69,7 +65,7 @@ export default async function RenewalsPage({
       )}
 
       {overdue.rows.length > 0 && (
-        <section aria-labelledby="renewals-overdue" className="mt-8">
+        <section id="overdue" aria-labelledby="renewals-overdue" className="mt-8 scroll-mt-4">
           <h2 id="renewals-overdue" className={`flex items-center gap-2 ${SECTION_TITLE} !text-rust`}>
             Overdue
             <span className="rounded-full bg-rust-bg px-2 py-0.5 font-sans text-[11px] font-medium">
@@ -80,20 +76,26 @@ export default async function RenewalsPage({
             Past their due date and not marked paid. Listed whatever period is selected.
           </p>
           <RenewalTable
-            rows={overdue.rows}
+            rows={overduePage.rows}
             today={today}
             setPaymentStatus={setPaymentStatus}
             markRenewed={markRenewed}
           />
+          <Pagination {...overduePage} href={href('overduePage', 'overdue')} label="Overdue" />
           {overdue.truncated && (
             <p className="mt-2 text-[12px] text-ink-soft">
-              Showing the oldest {overdue.rows.length}. Narrow the filters to see the rest.
+              Only the oldest {overdue.rows.length} overdue are listed. Narrow the filters to see
+              the rest.
             </p>
           )}
         </section>
       )}
 
-      <section aria-labelledby="renewals-period-heading" className="mt-8">
+      <section
+        id="due-in-period"
+        aria-labelledby="renewals-period-heading"
+        className="mt-8 scroll-mt-4"
+      >
         <h2 id="renewals-period-heading" className={`mb-3 ${SECTION_TITLE}`}>
           Due in this period
         </h2>
@@ -103,25 +105,8 @@ export default async function RenewalsPage({
           setPaymentStatus={setPaymentStatus}
           markRenewed={markRenewed}
         />
+        <Pagination {...result} href={href('page', 'due-in-period')} label="Due in this period" />
       </section>
-
-      <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-[12.5px] text-ink-soft">
-        <p>
-          {result.total === 0 ? ' ' : `Showing ${rangeStart}–${rangeEnd} of ${result.total}`}
-        </p>
-        <div className="flex gap-3">
-          {result.page > 1 && (
-            <Link href={pageHref(rawParams, result.page - 1)} className={TEXT_LINK}>
-              ← Previous
-            </Link>
-          )}
-          {result.page < totalPages && (
-            <Link href={pageHref(rawParams, result.page + 1)} className={TEXT_LINK}>
-              Next →
-            </Link>
-          )}
-        </div>
-      </div>
     </div>
   )
 }

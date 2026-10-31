@@ -70,7 +70,16 @@ the refresh of untouched future instances.
 
 ---
 
-## T1. Full pagination for `listFamilies` and `listRenewals`
+## T1. Full pagination for `listFamilies` and `listRenewals` — resolved
+
+**Resolved:** the families page pages through `listFamiliesPage` (50 a page,
+working with the search), and every long list — renewals, overdue, and the
+three Messages sections — uses the shared `fetchPage` / `Pagination` pair in
+`src/lib/queries/paging.ts` and `src/components/ui/Pagination.tsx`. A page
+number past the end serves the last page instead of failing. `listFamilies`
+keeps its unpaged form, with the `truncated` guard, for the renewals family
+picker.
+
 
 **`listRenewals` is done.** The Milestone 3 renewals page gave it real offset
 pagination — `page`/`pageSize`, an exact count, ordering by `(due_date, id)` so
@@ -98,7 +107,7 @@ Excel importer lands a batch of households at once.
 
 DPDP requires one: personal data may not be kept indefinitely once its purpose is
 served. Nothing in the schema, the code or the docs expresses how long a lapsed client's
-records are kept or what happens to them. This is a policy question first (Hiral decides
+records are kept or what happens to them. This is a policy question first (the advisor decides
 the period) and a scheduled job second.
 
 **More urgent since this milestone:** there is now a steady producer of exactly
@@ -156,7 +165,16 @@ both member actions parse through `memberInput`).
 "toggle consent" action that updates `whatsapp_consent` alone without re-validating the
 stored mobile. Worth re-reading this entry when the importer is designed.
 
-## T7. Milestone 4 must re-check consent and managed-by at send time, not trust the queue
+## T7. Milestone 4 must re-check consent and managed-by at send time, not trust the queue — resolved
+
+**Resolved in Milestone 4:** `src/lib/whatsapp/recheck.ts` decides every queued
+row again from current data immediately before sending — deleted holding or
+household, reminders off, paid / off-schedule / renewed past, expired, managed
+elsewhere, member removed, consent withdrawn, no number — and records the reason
+on each skipped row. A consented client whose number changed is sent to the new
+number (D3). Covered by `tests/unit/whatsapp/recheck.test.ts` and
+`tests/integration/whatsapp-send.test.ts`.
+
 
 The sweep resolves consent, `whatsapp_consent`, and a holding's `managed_by` exactly
 once — at the moment it queues a `reminder_log` row in `pending`. Nothing about that

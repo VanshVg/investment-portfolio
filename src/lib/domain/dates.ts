@@ -32,6 +32,26 @@ export function todayInIndia(now: Date = new Date()): string {
   return `${part('year')}-${part('month')}-${part('day')}`
 }
 
+const INDIA_CLOCK = new Intl.DateTimeFormat('en-GB', {
+  timeZone: 'Asia/Kolkata',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  hourCycle: 'h23',
+})
+
+/** An instant as the advisor's clock showed it: DD-MM-YYYY, HH:mm in India. */
+export function formatDateTimeIST(value: string | Date | null | undefined): string {
+  if (!value) return '—'
+  const date = typeof value === 'string' ? new Date(value) : value
+  if (Number.isNaN(date.getTime())) return '—'
+  const parts = INDIA_CLOCK.formatToParts(date)
+  const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((p) => p.type === type)!.value
+  return `${part('day')}-${part('month')}-${part('year')}, ${part('hour')}:${part('minute')}`
+}
+
 /** Parses a yyyy-mm-dd string as a local calendar day. */
 export function fromISODate(value: string): Date | null {
   const match = ISO.exec(value)
