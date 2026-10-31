@@ -144,24 +144,44 @@ describe('Messages page queries', () => {
 })
 
 describe('Messages page paging', () => {
-  // Other suites write messages in parallel, so totals are not asserted
-  // exactly; what must hold is that pages are disjoint and complete.
+  // Other suites write messages in parallel, and these lists are unfiltered,
+  // so every assertion here has to come out of a SINGLE query. Comparing rows
+  // across two queries cannot work however it is written: all three lists are
+  // ordered newest-first, so one row inserted between the calls shifts every
+  // offset, and page 2 of the second call is not the row page 2 of the first
+  // would have been. An earlier version compared `page: 2` against index 1 of
+  // a separate full listing and failed perhaps one run in two — not for the
+  // reason it named, since paging was never wrong.
+  //
+  // The slice arithmetic itself is pinned deterministically, without a
+  // database, in tests/unit/paging/paging.test.ts — ranges, totals, the empty
+  // list and past-the-end. What is left for this layer is what that cannot
+  // reach: that each query orders and ranges correctly in real SQL, and that
+  // the page it reports is the page it was asked for.
   it.each([
     ['failed', listFailedMessages],
     ['recent', listRecentMessages],
     ['replies', listReplies],
   ] as const)('pages the %s list without repeating or losing a row', async (_, list) => {
-    const first = await list(client, { page: 1, pageSize: 1 })
-    expect(first.rows).toHaveLength(1)
-    expect(first).toMatchObject({ page: 1, pageSize: 1 })
-    expect(first.total).toBeGreaterThanOrEqual(1)
-
+    // One snapshot. Within it the rows must be distinct and account for the
+    // total exactly. A repeated id means the query's joins fanned one message
+    // into several rows; a total that disagrees with the rows means the exact
+    // count and the select are not counting the same set, which is what
+    // happens when a filter reaches one and not the other. The unit tests
+    // cannot see either — they stub the query and test the arithmetic around
+    // it, so the SQL is exactly the part they do not run.
     const everything = await list(client, { page: 1, pageSize: 1000 })
+    const ids = everything.rows.map((row) => row.id)
+    expect(everything.total).toBeGreaterThanOrEqual(1)
+    expect(new Set(ids).size).toBe(ids.length)
+    expect(ids).toHaveLength(Math.min(everything.total, 1000))
+
+    // And the request is honoured rather than ignored: asking for one row
+    // returns one row, labelled as the page that was asked for.
     const second = await list(client, { page: 2, pageSize: 1 })
-    if (everything.total > 1) {
-      expect(second.rows[0].id).toBe(everything.rows[1].id)
-      expect(second.rows[0].id).not.toBe(first.rows[0].id)
-    }
+    expect(second).toMatchObject({ pageSize: 1 })
+    expect(second.rows.length).toBeLessThanOrEqual(1)
+    expect(second.page).toBe(second.total > 1 ? 2 : 1)
   })
 
   it('serves the last page for a page past the end', async () => {
